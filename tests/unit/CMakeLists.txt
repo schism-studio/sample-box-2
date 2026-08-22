@@ -1,0 +1,3 @@
+add_executable(SampleBox_UnitTests SmokeTests.cpp)
+target_link_libraries(SampleBox_UnitTests PRIVATE SampleBox_Core)
+add_test(NAME SampleBox.Unit COMMAND SampleBox_UnitTests)

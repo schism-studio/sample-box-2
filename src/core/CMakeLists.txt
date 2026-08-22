@@ -1,0 +1,2 @@
+add_library(SampleBox_Core INTERFACE)
+target_include_directories(SampleBox_Core INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})

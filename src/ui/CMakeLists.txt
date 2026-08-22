@@ -1,0 +1,2 @@
+add_library(SampleBox_UI INTERFACE)
+target_link_libraries(SampleBox_UI INTERFACE SampleBox_Core)

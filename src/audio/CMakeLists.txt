@@ -1,0 +1,2 @@
+add_library(SampleBox_Audio INTERFACE)
+target_link_libraries(SampleBox_Audio INTERFACE SampleBox_Core)
