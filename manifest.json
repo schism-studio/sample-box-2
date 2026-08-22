@@ -1,0 +1,22 @@
+{
+  "manifest_version": 1,
+  "id": "com.developer.samplepackvisualbrowser",
+  "name": "Sample Pack Visual Browser",
+  "version": "1.0.0",
+  "description": "Artwork-first 3D Cover Flow sample manager with zero-overlap DAW timeline placement",
+  "entry_point": "dist/backend/index.js",
+  "ui": {
+    "type": "webview",
+    "entry_point": "dist/frontend/index.html",
+    "default_width": 1024,
+    "default_height": 640,
+    "min_width": 600,
+    "min_height": 400
+  },
+  "permissions": [
+    "live_object_model",
+    "filesystem_read",
+    "filesystem_write",
+    "network_fetch"
+  ]
+}

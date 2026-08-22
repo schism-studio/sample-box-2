@@ -1,0 +1,30 @@
+{
+  "name": "sample-pack-visual-browser",
+  "version": "1.0.0",
+  "description": "3D Cover Flow sample manager extension for Ableton Live",
+  "type": "module",
+  "main": "dist/backend/index.js",
+  "scripts": {
+    "build:backend": "tsc -p tsconfig.backend.json",
+    "build:frontend": "vite build",
+    "build": "npm run build:backend && npm run build:frontend",
+    "dev:frontend": "vite",
+    "dev:backend": "tsc -p tsconfig.backend.json --watch"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.8.1",
+    "fast-glob": "^3.3.3",
+    "music-metadata": "^10.8.2",
+    "three": "^0.173.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.13.4",
+    "@types/three": "^0.173.0",
+    "@types/ws": "^8.5.14",
+    "typescript": "^5.7.3",
+    "vite": "^6.1.0",
+    "vite-plugin-singlefile": "^2.1.0"
+  }
+}
