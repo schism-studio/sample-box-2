@@ -16,6 +16,7 @@ class CoverArtCarousel final : public juce::Component
 {
 public:
     CoverArtCarousel();
+    ~CoverArtCarousel();
 
     void setLibrary(LibrarySnapshot snapshot);
     void resized() override;

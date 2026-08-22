@@ -16,6 +16,8 @@ CoverArtCarousel::CoverArtCarousel()
     animationClock.start();
 }
 
+CoverArtCarousel::~CoverArtCarousel() = default;
+
 void CoverArtCarousel::setLibrary(LibrarySnapshot snapshot)
 {
     library = std::move(snapshot);
