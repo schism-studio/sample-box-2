@@ -5,10 +5,13 @@
 
 namespace samplebox
 {
-BrowserView::BrowserView() : carousel(std::make_unique<CoverArtCarousel>())
+BrowserView::BrowserView()
+    : carousel(std::make_unique<CoverArtCarousel>())
 {
     addAndMakeVisible(*carousel);
 }
+
+BrowserView::~BrowserView() = default;
 
 void BrowserView::setLibrary(LibrarySnapshot snapshot)
 {

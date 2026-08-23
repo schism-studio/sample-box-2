@@ -1,15 +1,17 @@
 #include "LibraryScanner.h"
 
+#include <juce_events/juce_events.h>
+
 #include <algorithm>
 #include <array>
 #include <cctype>
-#include <system_error>
+#include <memory>
 
 namespace samplebox
 {
 namespace
 {
-constexpr std::array<std::string_view, 5> kSupportedExtensions {
+constexpr std::array kSupportedExtensions {
     ".wav", ".aif", ".aiff", ".mp3", ".flac"
 };
 
@@ -17,7 +19,7 @@ std::string toLowerExtension(const std::filesystem::path& path)
 {
     auto ext = path.extension().string();
     std::transform(ext.begin(), ext.end(), ext.begin(),
-                    [](unsigned char c) { return (char) std::tolower(c); });
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return ext;
 }
 }
@@ -37,7 +39,7 @@ void LibraryScanner::scanAsync(std::filesystem::path root, Completion completion
     cancelScan();
     rootPath = std::move(root);
     onComplete = std::move(completion);
-    startThread(juce::Priority::background);
+    startThread(juce::Thread::Priority::background);
 }
 
 void LibraryScanner::cancelScan()
@@ -52,8 +54,6 @@ bool LibraryScanner::isSupportedAudioFile(const std::filesystem::path& path)
     if (std::find(kSupportedExtensions.begin(), kSupportedExtensions.end(), ext) == kSupportedExtensions.end())
         return false;
 
-    // Mirrors the original DirectoryScanner behaviour: only count files
-    // JUCE can actually decode, not just ones with a matching extension.
     std::unique_ptr<juce::AudioFormatReader> reader(
         formatManager.createReaderFor(juce::File(path.string())));
     return reader != nullptr;
@@ -112,7 +112,7 @@ void LibraryScanner::run()
         }
 
         std::sort(snapshot.packs.begin(), snapshot.packs.end(),
-                   [](const SamplePack& a, const SamplePack& b) { return a.title < b.title; });
+                  [](const SamplePack& a, const SamplePack& b) { return a.title < b.title; });
     }
 
     if (threadShouldExit())
