@@ -1,24 +1,11 @@
+#include "MainWindow.h"
+
 #include <juce_gui_basics/juce_gui_basics.h>
 
-class SampleBoxWindow final : public juce::DocumentWindow
+#include <memory>
+
+namespace
 {
-public:
-    SampleBoxWindow()
-        : DocumentWindow("Sample Box", juce::Colours::black, DocumentWindow::allButtons)
-    {
-        setUsingNativeTitleBar(true);
-        setContentOwned(new juce::Component(), true);
-        centreWithSize(1200, 760);
-        setResizable(true, true);
-        setVisible(true);
-    }
-
-    void closeButtonPressed() override
-    {
-        juce::JUCEApplication::getInstance()->systemRequestedQuit();
-    }
-};
-
 class SampleBoxApplication final : public juce::JUCEApplication
 {
 public:
@@ -27,7 +14,7 @@ public:
 
     void initialise(const juce::String&) override
     {
-        window = std::make_unique<SampleBoxWindow>();
+        window = std::make_unique<samplebox::MainWindow>(getApplicationName());
     }
 
     void shutdown() override
@@ -36,7 +23,8 @@ public:
     }
 
 private:
-    std::unique_ptr<SampleBoxWindow> window;
+    std::unique_ptr<samplebox::MainWindow> window;
 };
+}
 
 START_JUCE_APPLICATION(SampleBoxApplication)

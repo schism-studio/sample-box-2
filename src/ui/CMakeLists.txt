@@ -4,6 +4,11 @@ add_library(SampleBox_UI
   BrowserView.cpp
   CoverArtCard.cpp
   CoverArtCarousel.cpp
+  LookAndFeel.cpp
+  MainPanel.cpp
+  PopoutWindow.cpp
+  SettingsComponent.cpp
+  SidebarBrowser.cpp
 )
 
 target_include_directories(SampleBox_UI PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
