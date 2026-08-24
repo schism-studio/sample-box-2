@@ -25,7 +25,15 @@ public:
         int maxSamples = 16;
     };
 
-    explicit CuratedSampleSelector(Options options = {});
+    // NOTE: deliberately two constructors rather than a single
+    // `Options options = {}` defaulted parameter. A nested class's default
+    // member initializers are not usable in a default argument of the
+    // enclosing class, because the enclosing class is still incomplete at
+    // that point. MSVC accepts it, but GCC and Clang correctly reject it,
+    // which broke any non-MSVC build (and would have broken the Phase 6 CI
+    // work). These overloads keep every call site unchanged.
+    CuratedSampleSelector();
+    explicit CuratedSampleSelector(Options options);
 
     [[nodiscard]] std::vector<std::filesystem::path> selectForPack(const SamplePack& pack) const;
 

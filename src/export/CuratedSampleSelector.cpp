@@ -5,6 +5,8 @@
 
 namespace samplebox::exportmodule
 {
+CuratedSampleSelector::CuratedSampleSelector() : options(Options {}) {}
+
 CuratedSampleSelector::CuratedSampleSelector(Options optionsIn) : options(optionsIn) {}
 
 std::vector<std::filesystem::path> CuratedSampleSelector::selectForPack(const SamplePack& pack) const
