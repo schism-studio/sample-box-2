@@ -5,9 +5,11 @@
 
 namespace samplebox
 {
-CoverArtCard::CoverArtCard(const SamplePack& packToDisplay, ArtworkCache& cache)
-    : pack(packToDisplay), artworkCache(cache)
+CoverArtCard::CoverArtCard(LibrarySnapshotPtr snapshot, std::size_t indexOfPack, ArtworkCache& cache)
+    : librarySnapshot(std::move(snapshot)), packIndex(indexOfPack), artworkCache(cache)
 {
+    jassert(librarySnapshot != nullptr);
+    jassert(packIndex < librarySnapshot->packs.size());
 }
 
 void CoverArtCard::setVisualState(float newScale, float newOpacity, bool isSelected)
@@ -20,6 +22,8 @@ void CoverArtCard::setVisualState(float newScale, float newOpacity, bool isSelec
 
 void CoverArtCard::paint(juce::Graphics& graphics)
 {
+    const auto& pack = getPack();
+
     const auto bounds = getLocalBounds().toFloat();
     graphics.setOpacity(opacity);
     graphics.setColour(theme::surface);

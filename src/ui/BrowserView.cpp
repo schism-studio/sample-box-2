@@ -13,7 +13,7 @@ BrowserView::BrowserView()
 
 BrowserView::~BrowserView() = default;
 
-void BrowserView::setLibrary(LibrarySnapshot snapshot)
+void BrowserView::setLibrary(LibrarySnapshotPtr snapshot)
 {
     carousel->setLibrary(std::move(snapshot));
 }

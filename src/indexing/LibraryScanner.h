@@ -22,7 +22,11 @@ namespace samplebox
 class LibraryScanner final : public juce::Thread
 {
 public:
-    using Completion = std::function<void(LibrarySnapshot)>;
+    // The snapshot is delivered as shared immutable state, not by value: it
+    // can hold hundreds of packs with thousands of paths each, and the UI
+    // objects that display it need to keep it alive independently of whoever
+    // received it first.
+    using Completion = std::function<void(LibrarySnapshotPtr)>;
 
     LibraryScanner();
     ~LibraryScanner() override;

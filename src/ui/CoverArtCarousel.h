@@ -18,7 +18,7 @@ public:
     CoverArtCarousel();
     ~CoverArtCarousel();
 
-    void setLibrary(LibrarySnapshot snapshot);
+    void setLibrary(LibrarySnapshotPtr snapshot);
     void resized() override;
     void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails& details) override;
 
@@ -26,7 +26,7 @@ private:
     void rebuildCards();
     void advanceAnimation(double deltaSeconds);
 
-    LibrarySnapshot library;
+    LibrarySnapshotPtr library;
     std::unique_ptr<ArtworkCache> artworkCache;
     std::vector<std::unique_ptr<CoverArtCard>> cards;
     AnimationClock animationClock;

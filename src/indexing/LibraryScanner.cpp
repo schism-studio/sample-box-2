@@ -92,8 +92,10 @@ SamplePack LibraryScanner::buildPackFromDirectory(const std::filesystem::path& p
 
 void LibraryScanner::run()
 {
-    LibrarySnapshot snapshot;
-    snapshot.generatedAt = std::chrono::system_clock::now();
+    // Built as a mutable local, then published as immutable shared state. The
+    // snapshot is never touched again after this function returns.
+    auto snapshot = std::make_shared<LibrarySnapshot>();
+    snapshot->generatedAt = std::chrono::system_clock::now();
 
     std::error_code ec;
     if (std::filesystem::is_directory(rootPath, ec) && !ec)
@@ -108,21 +110,24 @@ void LibraryScanner::run()
 
             std::error_code dirEc;
             if (it->is_directory(dirEc) && !dirEc)
-                snapshot.packs.push_back(buildPackFromDirectory(it->path()));
+                snapshot->packs.push_back(buildPackFromDirectory(it->path()));
         }
 
-        std::sort(snapshot.packs.begin(), snapshot.packs.end(),
+        std::sort(snapshot->packs.begin(), snapshot->packs.end(),
                   [](const SamplePack& a, const SamplePack& b) { return a.title < b.title; });
     }
 
     if (threadShouldExit())
         return;
 
-    auto completion = onComplete;
-    auto result = snapshot;
-    juce::MessageManager::callAsync([completion, result]() mutable {
-        if (completion)
-            completion(std::move(result));
-    });
+    // Hand the snapshot over by pointer. Previously this deep-copied the whole
+    // snapshot into `result` and then again into the lambda's captured copy,
+    // which for a large library means copying every path in every pack twice on
+    // the scanner thread before the UI ever sees it.
+    juce::MessageManager::callAsync(
+        [completion = onComplete, result = LibrarySnapshotPtr(std::move(snapshot))]() mutable {
+            if (completion)
+                completion(std::move(result));
+        });
 }
 }

@@ -16,7 +16,7 @@ MainPanel::MainPanel(SettingsComponent::GetPath getPath, SettingsComponent::SetP
     addAndMakeVisible(browserView);
 }
 
-void MainPanel::setLibrary(LibrarySnapshot snapshot)
+void MainPanel::setLibrary(LibrarySnapshotPtr snapshot)
 {
     browserView.setLibrary(std::move(snapshot));
 }

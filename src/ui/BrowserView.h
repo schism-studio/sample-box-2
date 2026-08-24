@@ -16,7 +16,7 @@ public:
     BrowserView();
     ~BrowserView() override;
 
-    void setLibrary(LibrarySnapshot snapshot);
+    void setLibrary(LibrarySnapshotPtr snapshot);
     void paint(juce::Graphics& graphics) override;
     void resized() override;
 

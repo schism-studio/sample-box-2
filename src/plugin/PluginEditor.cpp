@@ -57,11 +57,11 @@ void PluginEditor::startScan(const juce::File& root)
     // completion on the message thread via MessageManager::callAsync.
     processor.getScanner().scanAsync(
         std::filesystem::path(root.getFullPathName().toStdString()),
-        [safeEditor = juce::Component::SafePointer<PluginEditor>(this)](LibrarySnapshot snapshot) {
+        [safeEditor = juce::Component::SafePointer<PluginEditor>(this)](LibrarySnapshotPtr snapshot) {
             if (safeEditor == nullptr)
                 return;
 
-            const auto count = snapshot.packs.size();
+            const auto count = snapshot != nullptr ? snapshot->packs.size() : 0u;
             safeEditor->mainPanel.setLibrary(std::move(snapshot));
             safeEditor->mainPanel.setStatusText(juce::String((int) count) + " packs indexed");
         });

@@ -17,7 +17,7 @@ class MainPanel final : public juce::Component
 public:
     MainPanel(SettingsComponent::GetPath getPath, SettingsComponent::SetPath setPath);
 
-    void setLibrary(LibrarySnapshot snapshot);
+    void setLibrary(LibrarySnapshotPtr snapshot);
     void setStatusText(const juce::String& text);
 
     void paint(juce::Graphics& graphics) override;

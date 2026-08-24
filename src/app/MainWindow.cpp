@@ -70,8 +70,8 @@ void MainWindow::startScan(const juce::File& root)
     mainPanel.setStatusText("Scanning...");
     scanner.scanAsync(
         std::filesystem::path(root.getFullPathName().toStdString()),
-        [this](LibrarySnapshot snapshot) {
-            const auto count = snapshot.packs.size();
+        [this](LibrarySnapshotPtr snapshot) {
+            const auto count = snapshot != nullptr ? snapshot->packs.size() : 0u;
             mainPanel.setLibrary(std::move(snapshot));
             mainPanel.setStatusText(juce::String((int) count) + " packs indexed");
         });

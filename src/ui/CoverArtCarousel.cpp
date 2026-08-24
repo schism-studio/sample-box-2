@@ -18,8 +18,14 @@ CoverArtCarousel::CoverArtCarousel()
 
 CoverArtCarousel::~CoverArtCarousel() = default;
 
-void CoverArtCarousel::setLibrary(LibrarySnapshot snapshot)
+void CoverArtCarousel::setLibrary(LibrarySnapshotPtr snapshot)
 {
+    // Destroy the cards that point into the previous snapshot *before* dropping
+    // this carousel's reference to it. Order matters less now that each card
+    // holds its own share of the snapshot, but tearing down in this order keeps
+    // the lifetime obvious rather than relying on the shared count.
+    cards.clear();
+
     library = std::move(snapshot);
     targetScrollPosition = 0.0f;
     scrollPosition = 0.0f;
@@ -29,12 +35,20 @@ void CoverArtCarousel::setLibrary(LibrarySnapshot snapshot)
 void CoverArtCarousel::rebuildCards()
 {
     cards.clear();
-    for (const auto& pack : library.packs)
+
+    if (library == nullptr)
     {
-        auto card = std::make_unique<CoverArtCard>(pack, *artworkCache);
+        resized();
+        return;
+    }
+
+    for (std::size_t index = 0; index < library->packs.size(); ++index)
+    {
+        auto card = std::make_unique<CoverArtCard>(library, index, *artworkCache);
         addAndMakeVisible(*card);
         cards.push_back(std::move(card));
     }
+
     resized();
 }
 
