@@ -6,6 +6,7 @@
 #include <array>
 #include <cctype>
 #include <memory>
+#include <string>
 
 namespace samplebox
 {
@@ -15,19 +16,24 @@ constexpr std::array kSupportedExtensions {
     ".wav", ".aif", ".aiff", ".mp3", ".flac"
 };
 
-std::string toLowerExtension(const std::filesystem::path& path)
+// Directory names that appear inside real sample packs and contain nothing
+// playable. __MACOSX in particular is created by macOS's zip tooling and is
+// full of AppleDouble stubs that carry the *same* extensions as the real
+// samples sitting next to them, so descending into it produces a pack with
+// twice as many entries as it has samples, half of which cannot be played.
+constexpr std::array kIgnoredDirectoryNames {
+    "__macosx", "$recycle.bin", "system volume information"
+};
+
+std::string toLower(std::string value)
 {
-    auto ext = path.extension().string();
-    std::transform(ext.begin(), ext.end(), ext.begin(),
+    std::transform(value.begin(), value.end(), value.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return ext;
+    return value;
 }
 }
 
-LibraryScanner::LibraryScanner() : juce::Thread("SampleBox.LibraryScanner")
-{
-    formatManager.registerBasicFormats();
-}
+LibraryScanner::LibraryScanner() : juce::Thread("SampleBox.LibraryScanner") {}
 
 LibraryScanner::~LibraryScanner()
 {
@@ -48,18 +54,47 @@ void LibraryScanner::cancelScan()
     stopThread(5000);
 }
 
-bool LibraryScanner::isSupportedAudioFile(const std::filesystem::path& path)
+bool LibraryScanner::hasSupportedAudioExtension(const std::filesystem::path& path)
 {
-    const auto ext = toLowerExtension(path);
-    if (std::find(kSupportedExtensions.begin(), kSupportedExtensions.end(), ext) == kSupportedExtensions.end())
-        return false;
-
-    std::unique_ptr<juce::AudioFormatReader> reader(
-        formatManager.createReaderFor(juce::File(path.string())));
-    return reader != nullptr;
+    const auto extension = toLower(path.extension().string());
+    return std::find(kSupportedExtensions.begin(), kSupportedExtensions.end(), extension)
+        != kSupportedExtensions.end();
 }
 
-SamplePack LibraryScanner::buildPackFromDirectory(const std::filesystem::path& packRoot)
+bool LibraryScanner::isIgnoredFilename(const std::string& filename)
+{
+    // AppleDouble resource forks. A pack that has been zipped on a Mac and
+    // unzipped on Windows is full of these: for every kick.wav there is a
+    // ._kick.wav, which is a few hundred bytes of metadata carrying the .wav
+    // extension. Nothing but the leading "._" distinguishes them by name.
+    //
+    // These used to be filtered out as a side effect of building an
+    // AudioFormatReader for every candidate file - the reader failed, so the
+    // file was dropped. Now that the scan does not open files, they have to be
+    // excluded explicitly or every Mac-authored pack doubles in apparent size.
+    if (filename.rfind("._", 0) == 0)
+        return true;
+
+    // Dotfiles, including .DS_Store. Never user content.
+    if (filename.rfind('.', 0) == 0)
+        return true;
+
+    return false;
+}
+
+bool LibraryScanner::isIgnoredDirectoryName(const std::string& filename)
+{
+    if (filename.rfind('.', 0) == 0)
+        return true;
+
+    const auto lowercase = toLower(filename);
+    return std::find(kIgnoredDirectoryNames.begin(), kIgnoredDirectoryNames.end(), lowercase)
+        != kIgnoredDirectoryNames.end();
+}
+
+SamplePack LibraryScanner::buildPackFromDirectory(const std::filesystem::path& packRoot,
+                                                  ScanTally& tally,
+                                                  const std::function<bool()>& shouldCancel)
 {
     SamplePack pack;
     pack.id = packRoot.string();
@@ -72,25 +107,84 @@ SamplePack LibraryScanner::buildPackFromDirectory(const std::filesystem::path& p
         packRoot, std::filesystem::directory_options::skip_permission_denied, ec);
     const std::filesystem::recursive_directory_iterator end;
 
-    for (; it != end && !ec; it.increment(ec))
+    if (ec)
     {
-        if (threadShouldExit())
+        ++tally.unreadableDirectories;
+        return pack;
+    }
+
+    while (it != end)
+    {
+        if (shouldCancel && shouldCancel())
+        {
+            tally.cancelled = true;
             break;
+        }
 
-        const auto& entry = *it;
-        std::error_code fileEc;
-        if (!entry.is_regular_file(fileEc) || fileEc)
-            continue;
+        const auto entry = *it;
 
-        if (isSupportedAudioFile(entry.path()))
-            pack.sampleFiles.push_back(entry.path());
+        std::error_code entryEc;
+        if (entry.is_directory(entryEc) && !entryEc)
+        {
+            if (isIgnoredDirectoryName(entry.path().filename().string()))
+                it.disable_recursion_pending();
+        }
+        else if (entry.is_regular_file(entryEc) && !entryEc)
+        {
+            const auto filename = entry.path().filename().string();
+
+            if (hasSupportedAudioExtension(entry.path()))
+            {
+                if (isIgnoredFilename(filename))
+                {
+                    ++tally.ignoredFiles;
+                }
+                else
+                {
+                    // A zero-byte file has a valid name and no content. Cheap to
+                    // test here because directory_entry caches the size from the
+                    // same OS call that enumerated the directory, so this costs
+                    // no extra syscall on Windows.
+                    std::error_code sizeEc;
+                    if (entry.file_size(sizeEc) == 0 && !sizeEc)
+                        ++tally.ignoredFiles;
+                    else
+                        pack.sampleFiles.push_back(entry.path());
+                }
+            }
+        }
+
+        // Advance with a *separate* error_code, and clear it.
+        //
+        // This loop used to be `for (; it != end && !ec; it.increment(ec))`,
+        // sharing one error_code between the increment and the loop condition.
+        // The effect was that the first unreadable subdirectory anywhere in a
+        // pack did not skip that subdirectory - it ended the entire scan of
+        // that pack, silently, with whatever had been collected so far. On a
+        // library where one folder had awkward permissions, the user would see
+        // a plausible-looking but arbitrarily truncated pack and have no way to
+        // know. Recording it in the tally is what makes it visible.
+        std::error_code advanceEc;
+        it.increment(advanceEc);
+
+        if (advanceEc)
+        {
+            ++tally.unreadableDirectories;
+
+            // increment() failing means the iterator's position is not
+            // meaningful, so there is nothing safe to continue from.
+            break;
+        }
     }
 
     std::sort(pack.sampleFiles.begin(), pack.sampleFiles.end());
+    tally.sampleFiles += pack.sampleFiles.size();
     return pack;
 }
 
-void LibraryScanner::run()
+std::shared_ptr<LibrarySnapshot> LibraryScanner::scanTreeNow(
+    const std::filesystem::path& root,
+    const std::function<bool()>& shouldCancel)
 {
     // Built as a mutable local, then published as immutable shared state. The
     // snapshot is never touched again after this function returns.
@@ -98,25 +192,55 @@ void LibraryScanner::run()
     snapshot->generatedAt = std::chrono::system_clock::now();
 
     std::error_code ec;
-    if (std::filesystem::is_directory(rootPath, ec) && !ec)
+    if (std::filesystem::is_directory(root, ec) && !ec)
     {
-        std::filesystem::directory_iterator it(rootPath, ec);
+        std::filesystem::directory_iterator it(root, ec);
         const std::filesystem::directory_iterator end;
 
-        for (; it != end && !ec; it.increment(ec))
-        {
-            if (threadShouldExit())
-                break;
+        if (ec)
+            ++snapshot->tally.unreadableDirectories;
 
-            std::error_code dirEc;
-            if (it->is_directory(dirEc) && !dirEc)
-                snapshot->packs.push_back(buildPackFromDirectory(it->path()));
+        while (!ec && it != end)
+        {
+            if (shouldCancel && shouldCancel())
+            {
+                snapshot->tally.cancelled = true;
+                break;
+            }
+
+            std::error_code entryEc;
+            if (it->is_directory(entryEc) && !entryEc
+                && !isIgnoredDirectoryName(it->path().filename().string()))
+                snapshot->packs.push_back(
+                    buildPackFromDirectory(it->path(), snapshot->tally, shouldCancel));
+
+            // Same fix as in buildPackFromDirectory: one unreadable entry at
+            // the top level used to end the whole library scan.
+            std::error_code advanceEc;
+            it.increment(advanceEc);
+
+            if (advanceEc)
+            {
+                ++snapshot->tally.unreadableDirectories;
+                break;
+            }
         }
 
         std::sort(snapshot->packs.begin(), snapshot->packs.end(),
                   [](const SamplePack& a, const SamplePack& b) { return a.title < b.title; });
     }
 
+    return snapshot;
+}
+
+void LibraryScanner::run()
+{
+    auto snapshot = scanTreeNow(rootPath, [this] { return threadShouldExit(); });
+
+    // A cancelled scan is discarded rather than delivered. scanAsync() cancels
+    // before starting, so the only reason to be here is that a *newer* scan is
+    // about to run, and publishing a half-built library first would show the
+    // user a briefly wrong browser.
     if (threadShouldExit())
         return;
 

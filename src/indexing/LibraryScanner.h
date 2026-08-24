@@ -3,11 +3,11 @@
 #include "../core/LibrarySnapshot.h"
 #include "CoverArtResolver.h"
 
-#include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_core/juce_core.h>
 
 #include <filesystem>
 #include <functional>
+#include <memory>
 
 namespace samplebox
 {
@@ -19,6 +19,13 @@ namespace samplebox
 // list, and to run as a small self-contained class with no Listener
 // interface — callers get a single completion callback on the message
 // thread once the scan finishes.
+//
+// The scan is deliberately *optimistic*: a file is treated as a sample based
+// on its name alone, and is never opened. Confirming that a file really
+// decodes means opening it and parsing a header, which at library scale is
+// tens of thousands of file opens for information the audition path has to
+// re-establish anyway. Playback is therefore the layer that must tolerate a
+// file that turns out to be unreadable, not the scan.
 class LibraryScanner final : public juce::Thread
 {
 public:
@@ -44,14 +51,40 @@ public:
 
     void run() override;
 
+    // Walks `root` on the *calling* thread and returns the resulting snapshot.
+    // `shouldCancel` is polled between entries and may be null.
+    //
+    // Split out from run() so the whole traversal - filtering, tallying, error
+    // recovery - is testable without a background thread or a running JUCE
+    // message loop. run() is then only responsible for threading and delivery.
+    [[nodiscard]] std::shared_ptr<LibrarySnapshot> scanTreeNow(
+        const std::filesystem::path& root,
+        const std::function<bool()>& shouldCancel);
+
+    // Exposed for testing: these are pure name-based predicates with no
+    // filesystem access, and they encode assumptions about real-world sample
+    // packs that are worth being able to assert on directly.
+
+    // True when `path` carries an extension Sample Box can play. Says nothing
+    // about whether the file is readable or genuinely audio.
+    [[nodiscard]] static bool hasSupportedAudioExtension(const std::filesystem::path& path);
+
+    // True for filenames that must never become samples even when they carry a
+    // supported extension.
+    [[nodiscard]] static bool isIgnoredFilename(const std::string& filename);
+
+    // True for directories that must not be descended into, and must not
+    // themselves be treated as packs.
+    [[nodiscard]] static bool isIgnoredDirectoryName(const std::string& filename);
+
 private:
-    bool isSupportedAudioFile(const std::filesystem::path& path);
-    SamplePack buildPackFromDirectory(const std::filesystem::path& packRoot);
+    SamplePack buildPackFromDirectory(const std::filesystem::path& packRoot,
+                                      ScanTally& tally,
+                                      const std::function<bool()>& shouldCancel);
 
     std::filesystem::path rootPath;
     Completion onComplete;
 
-    juce::AudioFormatManager formatManager;
     CoverArtResolver coverArtResolver;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LibraryScanner)
