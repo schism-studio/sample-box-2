@@ -6,7 +6,6 @@ add_library(SampleBox_UI
   CoverArtCarousel.cpp
   LookAndFeel.cpp
   MainPanel.cpp
-  PopoutWindow.cpp
   SettingsComponent.cpp
   SidebarBrowser.cpp
 )
