@@ -3,6 +3,8 @@
 #include "ArtworkCache.h"
 #include "Theme.h"
 
+#include <cmath>
+
 namespace samplebox
 {
 CoverArtCard::CoverArtCard(LibrarySnapshotPtr snapshot, std::size_t indexOfPack, ArtworkCache& cache)
@@ -14,10 +16,21 @@ CoverArtCard::CoverArtCard(LibrarySnapshotPtr snapshot, std::size_t indexOfPack,
 
 void CoverArtCard::setVisualState(float newScale, float newOpacity, bool isSelected)
 {
+    // The carousel calls this for every card from resized(), which its
+    // animation tick drives once per frame. Repainting unconditionally meant
+    // every card was invalidated 60 times a second even when nothing about it
+    // had changed, so only repaint on an actual visual difference. The
+    // thresholds are well below one pixel of scale at any plausible card size.
+    const auto changed = std::abs(newScale - scale) > 0.001f
+                      || std::abs(newOpacity - opacity) > 0.001f
+                      || isSelected != selected;
+
     scale = newScale;
     opacity = newOpacity;
     selected = isSelected;
-    repaint();
+
+    if (changed)
+        repaint();
 }
 
 void CoverArtCard::paint(juce::Graphics& graphics)

@@ -9,11 +9,19 @@
 
 namespace samplebox
 {
+namespace
+{
+// Below this much remaining travel the motion is sub-pixel at any plausible
+// cover size, so the carousel is treated as settled and the clock is stopped.
+constexpr float kScrollSettleEpsilon = 0.001f;
+}
+
 CoverArtCarousel::CoverArtCarousel()
     : artworkCache(std::make_unique<ArtworkCache>()),
       animationClock([this](double deltaSeconds) { advanceAnimation(deltaSeconds); })
 {
-    animationClock.start();
+    // The clock is deliberately not started here. It runs only while the
+    // carousel is actually moving, and stops itself once it settles.
 }
 
 CoverArtCarousel::~CoverArtCarousel() = default;
@@ -52,10 +60,29 @@ void CoverArtCarousel::rebuildCards()
     resized();
 }
 
+void CoverArtCarousel::startAnimationIfNeeded()
+{
+    if (std::abs(targetScrollPosition - scrollPosition) > kScrollSettleEpsilon)
+        animationClock.start();
+}
+
 void CoverArtCarousel::advanceAnimation(double deltaSeconds)
 {
+    const auto remaining = targetScrollPosition - scrollPosition;
+
+    if (std::abs(remaining) <= kScrollSettleEpsilon)
+    {
+        // Land exactly on the target instead of asymptotically approaching it,
+        // then stop the clock. Without this the exponential ease never quite
+        // arrives and the timer would run forever.
+        scrollPosition = targetScrollPosition;
+        animationClock.stop();
+        resized();
+        return;
+    }
+
     const auto smoothing = static_cast<float>(std::min(1.0, deltaSeconds * 12.0));
-    scrollPosition += (targetScrollPosition - scrollPosition) * smoothing;
+    scrollPosition += remaining * smoothing;
     resized();
 }
 
@@ -87,5 +114,7 @@ void CoverArtCarousel::mouseWheelMove(const juce::MouseEvent&, const juce::Mouse
 
     const auto movement = details.deltaY != 0.0f ? -details.deltaY : details.deltaX;
     targetScrollPosition = juce::jlimit(0.0f, static_cast<float>(cards.size() - 1), targetScrollPosition + movement * 2.0f);
+
+    startAnimationIfNeeded();
 }
 }
