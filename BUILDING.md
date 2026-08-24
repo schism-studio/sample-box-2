@@ -4,6 +4,34 @@ This guide describes the Windows development workflow for the Sample Box standal
 
 > This project expects a local JUCE checkout at `external/JUCE`. JUCE and generated build files are intentionally not committed to this repository.
 
+## Quick build
+
+If JUCE is already installed at `external/JUCE`, the whole configure/build/test cycle is one command from **any** shell, including an ordinary Command Prompt or PowerShell window:
+
+```text
+scripts\build.bat
+```
+
+It can also simply be double-clicked in Explorer.
+
+Unlike the manual commands further down this document, `scripts\build.bat` locates and imports the Visual Studio 2022 build environment itself, so it does not need to be run from Developer PowerShell. That is the single most common cause of a failed build on a fresh machine, and the resulting errors are misleading — see [MSVC or Windows headers are missing](#msvc-or-windows-headers-are-missing). Importing that environment also puts the CMake and Ninja bundled with Visual Studio on `PATH`.
+
+The script checks the toolchain and the JUCE checkout before building, warns if `external/JUCE` is not at the validated revision, and prints the resulting VST3 and standalone paths on success.
+
+Arguments may be combined in any order:
+
+| Command | Effect |
+| --- | --- |
+| `scripts\build.bat` | Debug build, then run the tests |
+| `scripts\build.bat release` | Release build, then run the tests |
+| `scripts\build.bat notest` | Debug build, skip the tests |
+| `scripts\build.bat clean` | Delete the build directory, reconfigure, rebuild |
+| `scripts\build.bat release install` | Release build, then copy the VST3 bundle into `%CommonProgramFiles%\VST3` |
+
+`install` needs the DAW fully closed, since it holds the plug-in file open, and usually needs an elevated prompt because the system VST3 folder is not user-writable. Rescan plug-in folders in the DAW afterwards.
+
+The rest of this document covers the same steps manually, plus first-time setup and troubleshooting.
+
 ## Requirements
 
 Install the following before building:
