@@ -34,3 +34,8 @@
 # CMake build directories
 /build/
 /build-*/
+
+# Local JUCE framework checkout used for development builds.
+# Do not commit JUCE source; see build documentation.
+external/JUCE/*
+!external/JUCE/.gitkeep
