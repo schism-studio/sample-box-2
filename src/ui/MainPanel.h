@@ -4,6 +4,10 @@
 #include "BrowserView.h"
 #include "SettingsComponent.h"
 
+#if SAMPLEBOX_DRAG_SPIKE
+#include "DragDropSpike.h"
+#endif
+
 #include <juce_gui_basics/juce_gui_basics.h>
 
 namespace samplebox
@@ -27,6 +31,11 @@ private:
     juce::Label titleLabel;
     SettingsComponent settingsStrip;
     BrowserView browserView;
+
+#if SAMPLEBOX_DRAG_SPIKE
+    // TEMPORARY. Remove with src/ui/DragDropSpike.* — see that header.
+    DragDropSpike dragSpike;
+#endif
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainPanel)
 };

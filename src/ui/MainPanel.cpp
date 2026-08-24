@@ -14,6 +14,10 @@ MainPanel::MainPanel(SettingsComponent::GetPath getPath, SettingsComponent::SetP
 
     addAndMakeVisible(settingsStrip);
     addAndMakeVisible(browserView);
+
+#if SAMPLEBOX_DRAG_SPIKE
+    addAndMakeVisible(dragSpike);
+#endif
 }
 
 void MainPanel::setLibrary(LibrarySnapshotPtr snapshot)
@@ -39,6 +43,13 @@ void MainPanel::resized()
     titleLabel.setBounds(header);
 
     settingsStrip.setBounds(bounds.removeFromTop(66).reduced(12, 6));
+
+#if SAMPLEBOX_DRAG_SPIKE
+    // Bottom-left corner, deliberately in the way. It is a diagnostic, and it
+    // should be impossible to forget it is still compiled in.
+    dragSpike.setBounds(bounds.removeFromBottom(96).removeFromLeft(280).reduced(12, 6));
+#endif
+
     browserView.setBounds(bounds);
 }
 }
