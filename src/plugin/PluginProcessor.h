@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../audio/PreviewEngine.h"
 #include "../indexing/LibraryScanner.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -12,7 +13,8 @@ namespace samplebox
 // Deliberately a pass-through processor: Sample Box is a sample *browser*,
 // not an instrument or effect. It exists as a VST3 purely so the browser
 // UI (MainPanel) can live inside a DAW's plugin chain and drag samples
-// straight into the arrangement. Audio in equals audio out, unmodified.
+// straight into the arrangement. Audio in equals audio out, unmodified,
+// with sample preview mixed on top (see docs/decisions/0002-preview-audio-path.md).
 class PluginProcessor final : public juce::AudioProcessor
 {
 public:
@@ -46,12 +48,15 @@ public:
     void setSampleLibraryPath(const juce::String& path);
 
     LibraryScanner& getScanner() { return scanner; }
+    PreviewEngine& getPreviewEngine() { return previewEngine; }
 
 private:
     void loadSettings();
 
     std::unique_ptr<juce::PropertiesFile> settings;
     LibraryScanner scanner;
+    PreviewEngine previewEngine;
+    juce::AudioBuffer<float> previewBuffer;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginProcessor)
 };

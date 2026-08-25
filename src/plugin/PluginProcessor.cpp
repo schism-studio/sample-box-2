@@ -13,9 +13,16 @@ PluginProcessor::PluginProcessor()
 
 PluginProcessor::~PluginProcessor() = default;
 
-void PluginProcessor::prepareToPlay(double, int) {}
+void PluginProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
+{
+    previewEngine.prepareToPlay(samplesPerBlock, sampleRate);
+    previewBuffer.setSize(juce::jmax(2, getTotalNumOutputChannels()), samplesPerBlock);
+}
 
-void PluginProcessor::releaseResources() {}
+void PluginProcessor::releaseResources()
+{
+    previewEngine.releaseResources();
+}
 
 bool PluginProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
 {
@@ -34,8 +41,19 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
     for (auto i = getTotalNumInputChannels(); i < getTotalNumOutputChannels(); ++i)
         buffer.clear(i, 0, buffer.getNumSamples());
 
-    // Pass-through: no processing. Sample previewing happens through the
-    // editor's own PreviewEngine, not the plugin's audio bus.
+    // Preview is mixed in here rather than played through a separate device,
+    // because the host owns the audio device in a VST3 - there is no other
+    // path that reaches an output. See docs/decisions/0002-preview-audio-path.md.
+    if (!isNonRealtime())
+    {
+        previewBuffer.setSize(buffer.getNumChannels(), buffer.getNumSamples(), false, false, true);
+        previewBuffer.clear();
+        juce::AudioSourceChannelInfo info(&previewBuffer, 0, buffer.getNumSamples());
+        previewEngine.getNextAudioBlock(info);
+
+        for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+            buffer.addFrom(ch, 0, previewBuffer, ch, 0, buffer.getNumSamples());
+    }
 }
 
 juce::AudioProcessorEditor* PluginProcessor::createEditor()
