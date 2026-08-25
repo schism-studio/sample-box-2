@@ -11,8 +11,6 @@ namespace samplebox
 {
 namespace
 {
-// Below this much remaining travel the motion is sub-pixel at any plausible
-// cover size, so the carousel is treated as settled and the clock is stopped.
 constexpr float kScrollSettleEpsilon = 0.001f;
 }
 
@@ -20,20 +18,13 @@ CoverArtCarousel::CoverArtCarousel()
     : artworkCache(std::make_unique<ArtworkCache>()),
       animationClock([this](double deltaSeconds) { advanceAnimation(deltaSeconds); })
 {
-    // The clock is deliberately not started here. It runs only while the
-    // carousel is actually moving, and stops itself once it settles.
 }
 
 CoverArtCarousel::~CoverArtCarousel() = default;
 
 void CoverArtCarousel::setLibrary(LibrarySnapshotPtr snapshot)
 {
-    // Destroy the cards that point into the previous snapshot *before* dropping
-    // this carousel's reference to it. Order matters less now that each card
-    // holds its own share of the snapshot, but tearing down in this order keeps
-    // the lifetime obvious rather than relying on the shared count.
     cards.clear();
-
     library = std::move(snapshot);
     targetScrollPosition = 0.0f;
     scrollPosition = 0.0f;
@@ -72,9 +63,6 @@ void CoverArtCarousel::advanceAnimation(double deltaSeconds)
 
     if (std::abs(remaining) <= kScrollSettleEpsilon)
     {
-        // Land exactly on the target instead of asymptotically approaching it,
-        // then stop the clock. Without this the exponential ease never quite
-        // arrives and the timer would run forever.
         scrollPosition = targetScrollPosition;
         animationClock.stop();
         resized();
@@ -112,7 +100,7 @@ void CoverArtCarousel::mouseWheelMove(const juce::MouseEvent&, const juce::Mouse
     if (cards.empty())
         return;
 
-    const auto movement = details.deltaY != 0.0f ? -details.deltaY : details.deltaX;
+    const auto movement = details.deltaY != 0.0f ? details.deltaY : details.deltaX;
     targetScrollPosition = juce::jlimit(0.0f, static_cast<float>(cards.size() - 1), targetScrollPosition + movement * 2.0f);
 
     startAnimationIfNeeded();
