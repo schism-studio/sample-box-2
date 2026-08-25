@@ -4,14 +4,27 @@
 #include "Theme.h"
 
 #include <cmath>
+#include <utility>
 
 namespace samplebox
 {
-CoverArtCard::CoverArtCard(LibrarySnapshotPtr snapshot, std::size_t indexOfPack, ArtworkCache& cache)
-    : librarySnapshot(std::move(snapshot)), packIndex(indexOfPack), artworkCache(cache)
+CoverArtCard::CoverArtCard(LibrarySnapshotPtr snapshot,
+                           std::size_t indexOfPack,
+                           ArtworkCache& cache,
+                           std::function<void(std::size_t)> clickCallback)
+    : librarySnapshot(std::move(snapshot)),
+      packIndex(indexOfPack),
+      artworkCache(cache),
+      onPackClicked(std::move(clickCallback))
 {
     jassert(librarySnapshot != nullptr);
     jassert(packIndex < librarySnapshot->packs.size());
+}
+
+void CoverArtCard::mouseDown(const juce::MouseEvent&)
+{
+    if (onPackClicked)
+        onPackClicked(packIndex);
 }
 
 void CoverArtCard::setVisualState(float newScale, float newOpacity, bool isSelected)

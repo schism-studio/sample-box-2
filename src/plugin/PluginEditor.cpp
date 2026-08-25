@@ -9,10 +9,13 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     : AudioProcessorEditor(&p),
       processor(p),
       mainPanel([&p] { return p.getSampleLibraryPath(); },
-                 [this](const juce::String& path) {
-                     processor.setSampleLibraryPath(path);
-                     startScan(juce::File(path));
-                 })
+                [this](const juce::String& path) {
+                    processor.setSampleLibraryPath(path);
+                    startScan(juce::File(path));
+                },
+                [&p](const std::filesystem::path& samplePath) {
+                    p.getPreviewEngine().play(samplePath);
+                })
 {
     setLookAndFeel(&lookAndFeel);
     addAndMakeVisible(mainPanel);

@@ -3,10 +3,12 @@
 #include "CoverArtCarousel.h"
 #include "Theme.h"
 
+#include <utility>
+
 namespace samplebox
 {
-BrowserView::BrowserView()
-    : carousel(std::make_unique<CoverArtCarousel>())
+BrowserView::BrowserView(SampleSelected onSampleSelected)
+    : carousel(std::make_unique<CoverArtCarousel>(std::move(onSampleSelected)))
 {
     addAndMakeVisible(*carousel);
 }

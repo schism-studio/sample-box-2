@@ -1,10 +1,15 @@
 #include "MainPanel.h"
 #include "Theme.h"
 
+#include <utility>
+
 namespace samplebox
 {
-MainPanel::MainPanel(SettingsComponent::GetPath getPath, SettingsComponent::SetPath setPath)
-    : settingsStrip(std::move(getPath), std::move(setPath))
+MainPanel::MainPanel(SettingsComponent::GetPath getPath,
+                     SettingsComponent::SetPath setPath,
+                     PlaySample playSample)
+    : settingsStrip(std::move(getPath), std::move(setPath)),
+      browserView(std::move(playSample))
 {
     titleLabel.setText("Sample Box", juce::dontSendNotification);
     titleLabel.setFont(juce::Font(22.0f, juce::Font::bold));

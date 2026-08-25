@@ -22,7 +22,8 @@ MainWindow::MainWindow(const juce::String& name)
     : DocumentWindow(name, theme::background, DocumentWindow::allButtons),
       settings(std::make_unique<juce::PropertiesFile>(makeSettingsOptions())),
       mainPanel([this] { return getLibraryPath(); },
-                 [this](const juce::String& path) { setLibraryPath(path); })
+                [this](const juce::String& path) { setLibraryPath(path); },
+                [this](const std::filesystem::path& samplePath) { previewEngine.play(samplePath); })
 {
     setLookAndFeel(&lookAndFeel);
     setUsingNativeTitleBar(true);

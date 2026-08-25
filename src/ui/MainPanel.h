@@ -10,6 +10,9 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <filesystem>
+#include <functional>
+
 namespace samplebox
 {
 // Shared UI composition hosted identically by the standalone MainWindow
@@ -19,7 +22,11 @@ namespace samplebox
 class MainPanel final : public juce::Component
 {
 public:
-    MainPanel(SettingsComponent::GetPath getPath, SettingsComponent::SetPath setPath);
+    using PlaySample = std::function<void(const std::filesystem::path&)>;
+
+    MainPanel(SettingsComponent::GetPath getPath,
+              SettingsComponent::SetPath setPath,
+              PlaySample playSample = {});
 
     void setLibrary(LibrarySnapshotPtr snapshot);
     void setStatusText(const juce::String& text);
