@@ -1,6 +1,6 @@
-#pragma once
+﻿#pragma once
 
-#include "../core/LibrarySnapshot.h"
+#include "../core/BrowseState.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -17,14 +17,17 @@ class BrowserView final : public juce::Component
 public:
     using SampleSelected = std::function<void(const std::filesystem::path&)>;
 
-    explicit BrowserView(SampleSelected onSampleSelected = {});
+    BrowserView(BrowseState& browseState, SampleSelected onSampleSelected = {});
     ~BrowserView() override;
 
-    void setLibrary(LibrarySnapshotPtr snapshot);
+    // Re-renders the active pack view using the current shared state.
+    void refresh();
+
     void paint(juce::Graphics& graphics) override;
     void resized() override;
 
 private:
+    BrowseState& state;
     std::unique_ptr<CoverArtCarousel> carousel;
 };
 }

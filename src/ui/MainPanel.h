@@ -1,6 +1,6 @@
-#pragma once
+﻿#pragma once
 
-#include "../core/LibrarySnapshot.h"
+#include "../core/BrowseState.h"
 #include "BrowserView.h"
 #include "SettingsComponent.h"
 
@@ -17,8 +17,7 @@ namespace samplebox
 {
 // Shared UI composition hosted identically by the standalone MainWindow
 // and the VST3 PluginEditor: a title header, the library-path/settings
-// strip, and the cover-art browser. Keeping this in one place is what
-// keeps the standalone and VST3 editors pixel- and behaviour-identical.
+// strip, and the sample-pack browser.
 class MainPanel final : public juce::Component
 {
 public:
@@ -35,6 +34,7 @@ public:
     void resized() override;
 
 private:
+    BrowseState browseState;
     juce::Label titleLabel;
     SettingsComponent settingsStrip;
     BrowserView browserView;

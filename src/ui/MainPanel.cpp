@@ -1,4 +1,4 @@
-#include "MainPanel.h"
+﻿#include "MainPanel.h"
 #include "Theme.h"
 
 #include <utility>
@@ -9,7 +9,7 @@ MainPanel::MainPanel(SettingsComponent::GetPath getPath,
                      SettingsComponent::SetPath setPath,
                      PlaySample playSample)
     : settingsStrip(std::move(getPath), std::move(setPath)),
-      browserView(std::move(playSample))
+      browserView(browseState, std::move(playSample))
 {
     titleLabel.setText("Sample Box", juce::dontSendNotification);
     titleLabel.setFont(juce::Font(22.0f, juce::Font::bold));
@@ -27,7 +27,8 @@ MainPanel::MainPanel(SettingsComponent::GetPath getPath,
 
 void MainPanel::setLibrary(LibrarySnapshotPtr snapshot)
 {
-    browserView.setLibrary(std::move(snapshot));
+    browseState.setSnapshot(std::move(snapshot));
+    browserView.refresh();
 }
 
 void MainPanel::setStatusText(const juce::String& text)
