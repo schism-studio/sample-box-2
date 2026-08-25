@@ -51,7 +51,7 @@ public:
     PreviewEngine& getPreviewEngine() { return previewEngine; }
 
 private:
-    void loadSettings();
+    void ensureSettings();
 
     std::unique_ptr<juce::PropertiesFile> settings;
     LibraryScanner scanner;

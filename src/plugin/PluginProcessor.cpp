@@ -8,7 +8,6 @@ PluginProcessor::PluginProcessor()
                           .withInput("Input", juce::AudioChannelSet::stereo(), true)
                           .withOutput("Output", juce::AudioChannelSet::stereo(), true))
 {
-    loadSettings();
 }
 
 PluginProcessor::~PluginProcessor() = default;
@@ -26,11 +25,15 @@ void PluginProcessor::releaseResources()
 
 bool PluginProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
 {
-    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::mono()
-        && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
+    const auto input = layouts.getMainInputChannelSet();
+    const auto output = layouts.getMainOutputChannelSet();
+
+    if (output != juce::AudioChannelSet::mono()
+        && output != juce::AudioChannelSet::stereo())
         return false;
 
-    return layouts.getMainInputChannelSet() == layouts.getMainOutputChannelSet();
+    return input.isDisabled()
+        || input == output;
 }
 
 void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
@@ -71,8 +74,11 @@ void PluginProcessor::setStateInformation(const void* data, int sizeInBytes)
     juce::ignoreUnused(data, sizeInBytes);
 }
 
-void PluginProcessor::loadSettings()
+void PluginProcessor::ensureSettings()
 {
+    if (settings != nullptr)
+        return;
+
     juce::PropertiesFile::Options opts;
     opts.applicationName = "SampleBox";
     opts.filenameSuffix = "xml";
@@ -84,16 +90,15 @@ void PluginProcessor::loadSettings()
 
 juce::String PluginProcessor::getSampleLibraryPath() const
 {
-    return settings != nullptr ? settings->getValue("sampleLibraryPath", "") : juce::String();
+    const_cast<PluginProcessor*>(this)->ensureSettings();
+    return settings->getValue("sampleLibraryPath", "");
 }
 
 void PluginProcessor::setSampleLibraryPath(const juce::String& path)
 {
-    if (settings != nullptr)
-    {
-        settings->setValue("sampleLibraryPath", path);
-        settings->saveIfNeeded();
-    }
+    ensureSettings();
+    settings->setValue("sampleLibraryPath", path);
+    settings->saveIfNeeded();
 }
 }
 
