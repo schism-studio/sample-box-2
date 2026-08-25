@@ -35,6 +35,15 @@ MainWindow::MainWindow(const juce::String& name)
     centreWithSize(1200, 760);
     setVisible(true);
 
+    // Preview audio: the standalone owns its device outright, so the engine
+    // is driven directly, unlike the VST3 which mixes into processBlock.
+    // addAudioCallback must precede setSource - AudioSourcePlayer only calls
+    // prepareToPlay immediately if it already knows the sample rate, which it
+    // only learns once the callback is registered and the device starts.
+    audioDeviceManager.initialiseWithDefaultDevices(0, 2);
+    audioDeviceManager.addAudioCallback(&audioSourcePlayer);
+    audioSourcePlayer.setSource(&previewEngine);
+
     const auto savedPath = getLibraryPath();
     if (savedPath.isNotEmpty())
         startScan(juce::File(savedPath));
@@ -42,6 +51,8 @@ MainWindow::MainWindow(const juce::String& name)
 
 MainWindow::~MainWindow()
 {
+    audioSourcePlayer.setSource(nullptr);
+    audioDeviceManager.removeAudioCallback(&audioSourcePlayer);
     setLookAndFeel(nullptr);
 }
 
