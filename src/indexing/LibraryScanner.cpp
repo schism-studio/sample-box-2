@@ -211,8 +211,15 @@ std::shared_ptr<LibrarySnapshot> LibraryScanner::scanTreeNow(
             std::error_code entryEc;
             if (it->is_directory(entryEc) && !entryEc
                 && !isIgnoredDirectoryName(it->path().filename().string()))
-                snapshot->packs.push_back(
-                    buildPackFromDirectory(it->path(), snapshot->tally, shouldCancel));
+            {
+                auto pack = buildPackFromDirectory(it->path(), snapshot->tally, shouldCancel);
+
+                // A cover card represents something the user can audition or
+                // browse. Directories containing only artwork, documentation,
+                // ignored sidecars, or zero-byte files are not visible packs.
+                if (!pack.sampleFiles.empty())
+                    snapshot->packs.push_back(std::move(pack));
+            }
 
             // Same fix as in buildPackFromDirectory: one unreadable entry at
             // the top level used to end the whole library scan.
