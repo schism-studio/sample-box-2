@@ -12,3 +12,9 @@ target_link_libraries(SampleBox_StateTests PRIVATE
   juce::juce_audio_processors
 )
 add_test(NAME SampleBox.State COMMAND SampleBox_StateTests)
+
+add_executable(SampleBox_BrowseStateTests BrowseStateTests.cpp)
+target_link_libraries(SampleBox_BrowseStateTests PRIVATE
+  SampleBox_Core
+)
+add_test(NAME SampleBox.BrowseState COMMAND SampleBox_BrowseStateTests)

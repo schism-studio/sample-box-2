@@ -12,72 +12,111 @@ namespace samplebox
 {
 namespace
 {
-// Below this much remaining travel the motion is sub-pixel at any plausible
-// cover size, so the carousel is treated as settled and the clock is stopped.
 constexpr float kScrollSettleEpsilon = 0.001f;
 }
 
-CoverArtCarousel::CoverArtCarousel(SampleSelected sampleSelectedCallback)
-    : artworkCache(std::make_unique<ArtworkCache>()),
+CoverArtCarousel::CoverArtCarousel(BrowseState& state, SampleSelected sampleSelectedCallback)
+    : browseState(state),
+      artworkCache(std::make_unique<ArtworkCache>()),
       animationClock([this](double deltaSeconds) { advanceAnimation(deltaSeconds); }),
       onSampleSelected(std::move(sampleSelectedCallback))
 {
-    // The clock is deliberately not started here. It runs only while the
-    // carousel is actually moving, and stops itself once it settles.
-}
+    browseState.addListener(this);
 
-CoverArtCarousel::~CoverArtCarousel() = default;
-
-void CoverArtCarousel::setLibrary(LibrarySnapshotPtr snapshot)
-{
-    // Destroy the cards that point into the previous snapshot *before* dropping
-    // this carousel's reference to it. Order matters less now that each card
-    // holds its own share of the snapshot, but tearing down in this order keeps
-    // the lifetime obvious rather than relying on the shared count.
-    cards.clear();
-
-    library = std::move(snapshot);
-    targetScrollPosition = 0.0f;
-    scrollPosition = 0.0f;
-    rebuildCards();
-}
-
-void CoverArtCarousel::rebuildCards()
-{
-    cards.clear();
-
-    if (library == nullptr)
+    // Allocate fixed pool of reusable cards once
+    for (int i = 0; i < kMaxVisibleCards; ++i)
     {
-        resized();
-        return;
+        auto card = std::make_unique<CoverArtCard>(*artworkCache, [this](std::size_t clickedPackIndex) {
+            auditionAndSelect(clickedPackIndex);
+        });
+        card->setVisible(false);
+        addChildComponent(*card);
+        cardPool.push_back(std::move(card));
+    }
+}
+
+CoverArtCarousel::~CoverArtCarousel()
+{
+    browseState.removeListener(this);
+}
+
+void CoverArtCarousel::refresh()
+{
+    const auto totalPacks = browseState.getPackCount();
+    if (totalPacks == 0)
+    {
+        targetScrollPosition = 0.0f;
+        scrollPosition = 0.0f;
+    }
+    else
+    {
+        // If there's an active focused pack, make sure we align to it
+        const auto focusedIdx = browseState.findFocusedPackIndex();
+        if (focusedIdx.has_value())
+        {
+            targetScrollPosition = static_cast<float>(*focusedIdx);
+            scrollPosition = targetScrollPosition;
+        }
+        else
+        {
+            targetScrollPosition = juce::jlimit(0.0f, static_cast<float>(totalPacks - 1), targetScrollPosition);
+            scrollPosition = juce::jlimit(0.0f, static_cast<float>(totalPacks - 1), scrollPosition);
+        }
     }
 
-    for (std::size_t index = 0; index < library->packs.size(); ++index)
-    {
-        auto card = std::make_unique<CoverArtCard>(library,
-                                                   index,
-                                                   *artworkCache,
-                                                   [this](std::size_t clickedPackIndex) {
-                                                       auditionRandomSample(clickedPackIndex);
-                                                   });
-        addAndMakeVisible(*card);
-        cards.push_back(std::move(card));
-    }
-
-    resized();
+    layoutVisibleCards();
 }
 
-void CoverArtCarousel::auditionRandomSample(std::size_t packIndex)
+void CoverArtCarousel::scrollToPack(const std::string& packId)
 {
-    if (library == nullptr || packIndex >= library->packs.size() || !onSampleSelected)
+    browseState.focusPackById(packId);
+    const auto idx = browseState.findFocusedPackIndex();
+    if (idx.has_value())
+        scrollToPackIndex(*idx);
+}
+
+void CoverArtCarousel::scrollToPackIndex(std::size_t index)
+{
+    const auto totalPacks = browseState.getPackCount();
+    if (totalPacks == 0)
         return;
 
-    const auto& samples = library->packs[packIndex].sampleFiles;
-    if (samples.empty())
+    targetScrollPosition = juce::jlimit(0.0f, static_cast<float>(totalPacks - 1), static_cast<float>(index));
+    startAnimationIfNeeded();
+}
+
+void CoverArtCarousel::browseSelectionChanged()
+{
+    layoutVisibleCards();
+}
+
+void CoverArtCarousel::browseSnapshotChanged()
+{
+    refresh();
+}
+
+void CoverArtCarousel::auditionAndSelect(std::size_t packIndex)
+{
+    const auto* snapshot = browseState.snapshot.get();
+    if (snapshot == nullptr || packIndex >= snapshot->packs.size())
         return;
 
-    std::uniform_int_distribution<std::size_t> chooseSample(0, samples.size() - 1);
-    onSampleSelected(samples[chooseSample(randomEngine)]);
+    // 1. Focus pack in state
+    browseState.focusPackByIndex(packIndex);
+
+    // 2. Animate target to center the clicked pack
+    targetScrollPosition = static_cast<float>(packIndex);
+    startAnimationIfNeeded();
+
+    // 3. Play random sample
+    const auto& pack = snapshot->packs[packIndex];
+    if (!pack.sampleFiles.empty() && onSampleSelected)
+    {
+        std::uniform_int_distribution<std::size_t> chooseSample(0, pack.sampleFiles.size() - 1);
+        const auto& chosenSample = pack.sampleFiles[chooseSample(randomEngine)];
+        browseState.selectSample(chosenSample);
+        onSampleSelected(chosenSample);
+    }
 }
 
 void CoverArtCarousel::startAnimationIfNeeded()
@@ -92,48 +131,93 @@ void CoverArtCarousel::advanceAnimation(double deltaSeconds)
 
     if (std::abs(remaining) <= kScrollSettleEpsilon)
     {
-        // Land exactly on the target instead of asymptotically approaching it,
-        // then stop the clock. Without this the exponential ease never quite
-        // arrives and the timer would run forever.
         scrollPosition = targetScrollPosition;
         animationClock.stop();
-        resized();
+
+        // Update focused pack index to the settled center card if not already focused
+        const auto totalPacks = browseState.getPackCount();
+        if (totalPacks > 0)
+        {
+            const auto centerIndex = static_cast<std::size_t>(juce::roundToInt(scrollPosition));
+            if (centerIndex < totalPacks)
+                browseState.focusPackByIndex(centerIndex);
+        }
+
+        layoutVisibleCards();
         return;
     }
 
     const auto smoothing = static_cast<float>(std::min(1.0, deltaSeconds * 12.0));
     scrollPosition += remaining * smoothing;
-    resized();
+    layoutVisibleCards();
 }
 
 void CoverArtCarousel::resized()
 {
+    layoutVisibleCards();
+}
+
+void CoverArtCarousel::layoutVisibleCards()
+{
+    const auto totalPacks = browseState.getPackCount();
+    if (totalPacks == 0 || browseState.snapshot == nullptr)
+    {
+        for (auto& card : cardPool)
+            card->setVisible(false);
+        return;
+    }
+
     const auto centreX = getWidth() * 0.5f;
     const auto centreY = getHeight() * 0.5f;
 
-    for (std::size_t index = 0; index < cards.size(); ++index)
+    // Determine virtual index window
+    const int minIndex = std::max(0, static_cast<int>(std::floor(scrollPosition - kVisibleReach)));
+    const int maxIndex = std::min(static_cast<int>(totalPacks - 1), static_cast<int>(std::ceil(scrollPosition + kVisibleReach)));
+
+    const auto focusedIndexOpt = browseState.findFocusedPackIndex();
+
+    std::size_t poolIdx = 0;
+
+    for (int index = minIndex; index <= maxIndex && poolIdx < cardPool.size(); ++index, ++poolIdx)
     {
+        auto& card = *cardPool[poolIdx];
+        card.bindToPack(browseState.snapshot, static_cast<std::size_t>(index));
+
         const auto offset = static_cast<float>(index) - scrollPosition;
         const auto distance = std::abs(offset);
         const auto scale = std::max(0.72f, 1.0f - distance * 0.12f);
         const auto opacity = std::max(0.28f, 1.0f - distance * 0.24f);
         const auto width = theme::carouselCardWidth * scale;
         const auto height = theme::carouselCardHeight * scale;
-        const auto x = centreX + offset * 190.0f - width * 0.5f;
+        const auto x = centreX + offset * kCardSpacing - width * 0.5f;
         const auto y = centreY - height * 0.5f + distance * 20.0f;
 
-        cards[index]->setBounds(juce::roundToInt(x), juce::roundToInt(y), juce::roundToInt(width), juce::roundToInt(height));
-        cards[index]->setVisualState(scale, opacity, distance < 0.5f);
+        const bool isFocused = focusedIndexOpt.has_value() && (*focusedIndexOpt == static_cast<std::size_t>(index));
+        const bool isVisuallyCentered = distance < 0.5f;
+
+        card.setVisible(true);
+        card.setBounds(juce::roundToInt(x), juce::roundToInt(y), juce::roundToInt(width), juce::roundToInt(height));
+        card.setVisualState(scale, opacity, isFocused || isVisuallyCentered);
+
+        // Z-order: bring closer cards forward
+        card.toFront(false);
+    }
+
+    // Hide any unused cards in the pool
+    for (; poolIdx < cardPool.size(); ++poolIdx)
+    {
+        cardPool[poolIdx]->setVisible(false);
     }
 }
 
 void CoverArtCarousel::mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails& details)
 {
-    if (cards.empty())
+    const auto totalPacks = browseState.getPackCount();
+    if (totalPacks == 0)
         return;
 
     const auto movement = details.deltaY != 0.0f ? details.deltaY : details.deltaX;
-    targetScrollPosition = juce::jlimit(0.0f, static_cast<float>(cards.size() - 1), targetScrollPosition + movement * 2.0f);
+    targetScrollPosition = juce::jlimit(0.0f, static_cast<float>(totalPacks - 1), targetScrollPosition + movement * 2.0f);
 
     startAnimationIfNeeded();
 }

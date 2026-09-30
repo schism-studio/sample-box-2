@@ -8,22 +8,26 @@
 
 namespace samplebox
 {
-CoverArtCard::CoverArtCard(LibrarySnapshotPtr snapshot,
-                           std::size_t indexOfPack,
-                           ArtworkCache& cache,
+CoverArtCard::CoverArtCard(ArtworkCache& cache,
                            std::function<void(std::size_t)> clickCallback)
-    : librarySnapshot(std::move(snapshot)),
-      packIndex(indexOfPack),
-      artworkCache(cache),
+    : artworkCache(cache),
       onPackClicked(std::move(clickCallback))
 {
-    jassert(librarySnapshot != nullptr);
-    jassert(packIndex < librarySnapshot->packs.size());
+}
+
+void CoverArtCard::bindToPack(LibrarySnapshotPtr snapshot, std::size_t indexOfPack)
+{
+    const bool packChanged = (librarySnapshot != snapshot) || (packIndex != indexOfPack);
+    librarySnapshot = std::move(snapshot);
+    packIndex = indexOfPack;
+
+    if (packChanged)
+        repaint();
 }
 
 void CoverArtCard::mouseDown(const juce::MouseEvent&)
 {
-    if (onPackClicked)
+    if (onPackClicked && hasValidPack())
         onPackClicked(packIndex);
 }
 
@@ -43,7 +47,9 @@ void CoverArtCard::setVisualState(float newScale, float newOpacity, bool isSelec
 
 void CoverArtCard::paint(juce::Graphics& graphics)
 {
-    const auto& pack = getPack();
+    const auto* pack = getPack();
+    if (pack == nullptr)
+        return;
 
     const auto bounds = getLocalBounds().toFloat();
     graphics.setOpacity(opacity);
@@ -56,14 +62,16 @@ void CoverArtCard::paint(juce::Graphics& graphics)
     const auto thumbnailHeight = coverFlowThumbnailSize;
 
     const juce::Component::SafePointer<CoverArtCard> safeThis(this);
+    const auto capturedIndex = packIndex;
 
     const auto image = artworkCache.getThumbnail(
-        pack.coverArtPath,
+        pack->coverArtPath,
         thumbnailWidth,
         thumbnailHeight,
-        [safeThis]()
+        [safeThis, capturedIndex]()
         {
-            if (safeThis != nullptr)
+            // Verify component is still bound to the same pack
+            if (safeThis != nullptr && safeThis->packIndex == capturedIndex)
                 safeThis->repaint();
         });
 
@@ -76,7 +84,7 @@ void CoverArtCard::paint(juce::Graphics& graphics)
 
     graphics.setColour(theme::textPrimary);
     graphics.setFont(selected ? 17.0f : 15.0f);
-    graphics.drawFittedText(pack.title,
+    graphics.drawFittedText(pack->title,
                             getLocalBounds().reduced(12).removeFromBottom(34),
                             juce::Justification::centred,
                             2);
