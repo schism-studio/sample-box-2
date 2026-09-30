@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "../core/LibrarySnapshot.h"
 #include "../core/SamplePack.h"
@@ -15,10 +15,6 @@ class ArtworkCache;
 class CoverArtCard final : public juce::Component
 {
 public:
-    // Takes shared ownership of the snapshot it is displaying a pack from,
-    // rather than only a reference to the pack. The card is a live Component
-    // whose paint() can run at any point in the message loop, so it must not
-    // depend on some other object continuing to hold the snapshot for it.
     CoverArtCard(LibrarySnapshotPtr snapshot,
                  std::size_t packIndex,
                  ArtworkCache& artworkCache,
@@ -28,7 +24,10 @@ public:
     void mouseDown(const juce::MouseEvent&) override;
     void setVisualState(float scale, float opacity, bool selected);
 
-    [[nodiscard]] const SamplePack& getPack() const { return librarySnapshot->packs[packIndex]; }
+    [[nodiscard]] const SamplePack& getPack() const
+    {
+        return librarySnapshot->packs[packIndex];
+    }
 
 private:
     LibrarySnapshotPtr librarySnapshot;

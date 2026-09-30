@@ -29,11 +29,6 @@ void CoverArtCard::mouseDown(const juce::MouseEvent&)
 
 void CoverArtCard::setVisualState(float newScale, float newOpacity, bool isSelected)
 {
-    // The carousel calls this for every card from resized(), which its
-    // animation tick drives once per frame. Repainting unconditionally meant
-    // every card was invalidated 60 times a second even when nothing about it
-    // had changed, so only repaint on an actual visual difference. The
-    // thresholds are well below one pixel of scale at any plausible card size.
     const auto changed = std::abs(newScale - scale) > 0.001f
                       || std::abs(newOpacity - opacity) > 0.001f
                       || isSelected != selected;
@@ -56,18 +51,34 @@ void CoverArtCard::paint(juce::Graphics& graphics)
     graphics.fillRoundedRectangle(bounds, theme::cardCornerRadius);
 
     const auto artworkBounds = bounds.reduced(12.0f).withTrimmedBottom(46.0f);
-    const auto image = artworkCache.imageFor(pack.coverArtPath);
+    constexpr int coverFlowThumbnailSize = 320;
+    const auto thumbnailWidth = coverFlowThumbnailSize;
+    const auto thumbnailHeight = coverFlowThumbnailSize;
 
-    if (image.isValid())
-        graphics.drawImageWithin(image, artworkBounds.getX(), artworkBounds.getY(), artworkBounds.getWidth(), artworkBounds.getHeight(), juce::RectanglePlacement::centred);
-    else
-    {
-        graphics.setColour(theme::accent.withAlpha(0.25f));
-        graphics.fillRoundedRectangle(artworkBounds, theme::cardCornerRadius - 4.0f);
-    }
+    const juce::Component::SafePointer<CoverArtCard> safeThis(this);
+
+    const auto image = artworkCache.getThumbnail(
+        pack.coverArtPath,
+        thumbnailWidth,
+        thumbnailHeight,
+        [safeThis]()
+        {
+            if (safeThis != nullptr)
+                safeThis->repaint();
+        });
+
+    graphics.drawImageWithin(image,
+                             artworkBounds.getX(),
+                             artworkBounds.getY(),
+                             artworkBounds.getWidth(),
+                             artworkBounds.getHeight(),
+                             juce::RectanglePlacement::centred);
 
     graphics.setColour(theme::textPrimary);
     graphics.setFont(selected ? 17.0f : 15.0f);
-    graphics.drawFittedText(pack.title, getLocalBounds().reduced(12).removeFromBottom(34), juce::Justification::centred, 2);
+    graphics.drawFittedText(pack.title,
+                            getLocalBounds().reduced(12).removeFromBottom(34),
+                            juce::Justification::centred,
+                            2);
 }
 }

@@ -3,6 +3,7 @@
 #include "LibrarySnapshot.h"
 
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <string>
 #include <utility>
@@ -35,6 +36,12 @@ struct BrowseState
     std::filesystem::path selectedSamplePath;
     std::string searchQuery;
     std::vector<std::string> extensionFilter;
+
+    // Continuous zoom per view mode, 0.0–1.0. Each view maps this to its own
+    // pixel range. Stored here so the user's zoom choice survives view switches.
+    double thumbnailZoomGrid = 0.5;
+    double thumbnailZoomList = 0.5;
+    double thumbnailZoomCoverFlow = 0.5;
 
     void setSnapshot(LibrarySnapshotPtr newSnapshot)
     {
@@ -73,6 +80,31 @@ struct BrowseState
     void clearSelection()
     {
         selectedSamplePath.clear();
+    }
+
+    // View-specific pixel-size helpers. Adjust ranges later if needed.
+    [[nodiscard]] int gridTileSize() const
+    {
+        constexpr int minSize = 80;
+        constexpr int maxSize = 320;
+        const auto t = std::clamp(thumbnailZoomGrid, 0.0, 1.0);
+        return static_cast<int>(std::round(minSize + t * (maxSize - minSize)));
+    }
+
+    [[nodiscard]] int listThumbnailSize() const
+    {
+        constexpr int minSize = 48;
+        constexpr int maxSize = 128;
+        const auto t = std::clamp(thumbnailZoomList, 0.0, 1.0);
+        return static_cast<int>(std::round(minSize + t * (maxSize - minSize)));
+    }
+
+    [[nodiscard]] int coverFlowCardSize() const
+    {
+        constexpr int minSize = 200;
+        constexpr int maxSize = 360;
+        const auto t = std::clamp(thumbnailZoomCoverFlow, 0.0, 1.0);
+        return static_cast<int>(std::round(minSize + t * (maxSize - minSize)));
     }
 };
 }
