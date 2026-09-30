@@ -1,0 +1,89 @@
+[1mdiff --git a/src/indexing/LibraryScanner.cpp b/src/indexing/LibraryScanner.cpp[m
+[1mindex 2b5a684..056896a 100644[m
+[1m--- a/src/indexing/LibraryScanner.cpp[m
+[1m+++ b/src/indexing/LibraryScanner.cpp[m
+[36m@@ -211,8 +211,15 @@[m [mstd::shared_ptr<LibrarySnapshot> LibraryScanner::scanTreeNow([m
+             std::error_code entryEc;[m
+             if (it->is_directory(entryEc) && !entryEc[m
+                 && !isIgnoredDirectoryName(it->path().filename().string()))[m
+[31m-                snapshot->packs.push_back([m
+[31m-                    buildPackFromDirectory(it->path(), snapshot->tally, shouldCancel));[m
+[32m+[m[32m            {[m
+[32m+[m[32m                auto pack = buildPackFromDirectory(it->path(), snapshot->tally, shouldCancel);[m
+[32m+[m
+[32m+[m[32m                // A cover card represents something the user can audition or[m
+[32m+[m[32m                // browse. Directories containing only artwork, documentation,[m
+[32m+[m[32m                // ignored sidecars, or zero-byte files are not visible packs.[m
+[32m+[m[32m                if (!pack.sampleFiles.empty())[m
+[32m+[m[32m                    snapshot->packs.push_back(std::move(pack));[m
+[32m+[m[32m            }[m
+ [m
+             // Same fix as in buildPackFromDirectory: one unreadable entry at[m
+             // the top level used to end the whole library scan.[m
+[1mdiff --git a/tests/unit/ScannerTests.cpp b/tests/unit/ScannerTests.cpp[m
+[1mindex 075c715..311cc5f 100644[m
+[1m--- a/tests/unit/ScannerTests.cpp[m
+[1m+++ b/tests/unit/ScannerTests.cpp[m
+[36m@@ -250,6 +250,42 @@[m [mvoid testDoesNotDescendIntoMacosxDirectories()[m
+     CHECK_EQ(snapshot->tally.sampleFiles, 1u);[m
+ }[m
+ [m
+[32m+[m[32mvoid testHidesEmptyAndUntriggerablePacks()[m
+[32m+[m[32m{[m
+[32m+[m[32m    ScopedTempDirectory temp { "empty-packs" };[m
+[32m+[m
+[32m+[m[32m    // These immediate subfolders must not create browser cards because none[m
+[32m+[m[32m    // contains a triggerable sample.[m
+[32m+[m[32m    temp.makeDirectory("Empty");[m
+[32m+[m[32m    temp.makeFile("Artwork Only/cover.png");[m
+[32m+[m[32m    temp.makeFile("Documentation/readme.txt");[m
+[32m+[m[32m    temp.makeFile("Sidecars/._kick.wav");[m
+[32m+[m[32m    temp.makeFile("Hidden/.DS_Store");[m
+[32m+[m[32m    temp.makeFile("Zero Byte/empty.wav", "");[m
+[32m+[m
+[32m+[m[32m    // A recursive playable file is enough to make this a visible pack.[m
+[32m+[m[32m    temp.makeFile("Playable/Nested/kick.wav");[m
+[32m+[m
+[32m+[m[32m    samplebox::LibraryScanner scanner;[m
+[32m+[m[32m    const auto snapshot = scanner.scanTreeNow(temp.path(), nullptr);[m
+[32m+[m
+[32m+[m[32m    CHECK_EQ(snapshot->packs.size(), 1u);[m
+[32m+[m[32m    CHECK_EQ(snapshot->tally.sampleFiles, 1u);[m
+[32m+[m[32m    CHECK_EQ(snapshot->tally.ignoredFiles, 2u);[m
+[32m+[m
+[32m+[m[32m    const auto* playable = findPack(*snapshot, "Playable");[m
+[32m+[m[32m    CHECK(playable != nullptr);[m
+[32m+[m[32m    if (playable != nullptr)[m
+[32m+[m[32m        CHECK_EQ(playable->sampleFiles.size(), 1u);[m
+[32m+[m
+[32m+[m[32m    CHECK(findPack(*snapshot, "Empty") == nullptr);[m
+[32m+[m[32m    CHECK(findPack(*snapshot, "Artwork Only") == nullptr);[m
+[32m+[m[32m    CHECK(findPack(*snapshot, "Documentation") == nullptr);[m
+[32m+[m[32m    CHECK(findPack(*snapshot, "Sidecars") == nullptr);[m
+[32m+[m[32m    CHECK(findPack(*snapshot, "Hidden") == nullptr);[m
+[32m+[m[32m    CHECK(findPack(*snapshot, "Zero Byte") == nullptr);[m
+[32m+[m[32m}[m
+[32m+[m
+ void testSkipsIgnoredTopLevelDirectoriesAsPacks()[m
+ {[m
+     ScopedTempDirectory temp { "toplevel" };[m
+[36m@@ -258,9 +294,8 @@[m [mvoid testSkipsIgnoredTopLevelDirectoriesAsPacks()[m
+     temp.makeFile("__MACOSX/._something.wav");[m
+     temp.makeFile(".hidden/kick.wav");[m
+ [m
+[31m-    // A loose file at the library root is not a pack and is currently dropped[m
+[31m-    // (defect D8, still open). Asserted so the existing behaviour is pinned[m
+[31m-    // down rather than assumed.[m
+[32m+[m[32m    // Loose files in the selected root are deliberately ignored. The root is[m
+[32m+[m[32m    // a container of pack folders, not a pack/card of its own.[m
+     temp.makeFile("stray.wav");[m
+ [m
+     samplebox::LibraryScanner scanner;[m
+[36m@@ -364,6 +399,7 @@[m [mint main()[m
+     testCountsPacksAndSamples();[m
+     testIgnoresNonAudioAndJunk();[m
+     testDoesNotDescendIntoMacosxDirectories();[m
+[32m+[m[32m    testHidesEmptyAndUntriggerablePacks();[m
+     testSkipsIgnoredTopLevelDirectoriesAsPacks();[m
+     testResolvesCoverArt();[m
+     testMissingRootYieldsEmptySnapshot();[m
