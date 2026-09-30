@@ -1,10 +1,14 @@
-add_executable(SampleBox_UnitTests ScannerTests.cpp)
-
-# SampleBox_Core is an INTERFACE (header-only) target, so linking it alone
-# resolves the snapshot types but not LibraryScanner's implementation.
-target_link_libraries(SampleBox_UnitTests PRIVATE
+add_executable(SampleBox_ScannerTests ScannerTests.cpp)
+target_link_libraries(SampleBox_ScannerTests PRIVATE
   SampleBox_Core
   SampleBox_Indexing
 )
+add_test(NAME SampleBox.Scanner COMMAND SampleBox_ScannerTests)
 
-add_test(NAME SampleBox.Unit COMMAND SampleBox_UnitTests)
+add_executable(SampleBox_StateTests StatePersistenceTests.cpp)
+target_link_libraries(SampleBox_StateTests PRIVATE
+  SampleBox_Core
+  juce::juce_core
+  juce::juce_audio_processors
+)
+add_test(NAME SampleBox.State COMMAND SampleBox_StateTests)

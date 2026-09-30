@@ -1,4 +1,4 @@
-﻿#include "MainPanel.h"
+#include "MainPanel.h"
 #include "Theme.h"
 
 #include <utility>
@@ -8,7 +8,16 @@ namespace samplebox
 MainPanel::MainPanel(SettingsComponent::GetPath getPath,
                      SettingsComponent::SetPath setPath,
                      PlaySample playSample)
-    : settingsStrip(std::move(getPath), std::move(setPath)),
+    : MainPanel(defaultBrowseState, std::move(getPath), std::move(setPath), std::move(playSample))
+{
+}
+
+MainPanel::MainPanel(BrowseState& sharedBrowseState,
+                     SettingsComponent::GetPath getPath,
+                     SettingsComponent::SetPath setPath,
+                     PlaySample playSample)
+    : browseState(sharedBrowseState),
+      settingsStrip(std::move(getPath), std::move(setPath)),
       browserView(browseState, std::move(playSample))
 {
     titleLabel.setText("Sample Box", juce::dontSendNotification);

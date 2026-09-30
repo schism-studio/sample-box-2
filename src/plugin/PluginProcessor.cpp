@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "../core/StatePersistence.h"
 
 namespace samplebox
 {
@@ -66,12 +67,36 @@ juce::AudioProcessorEditor* PluginProcessor::createEditor()
 
 void PluginProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
-    juce::ignoreUnused(destData);
+    StatePersistence::InstanceState state;
+    state.sampleLibraryPath = getSampleLibraryPath();
+    state.packViewMode = browseState.packViewMode;
+    state.focusedPackId = browseState.focusedPackId;
+    state.selectedSamplePath = browseState.selectedSamplePath.string();
+    state.thumbnailZoomGrid = browseState.thumbnailZoomGrid;
+    state.thumbnailZoomList = browseState.thumbnailZoomList;
+    state.thumbnailZoomCoverFlow = browseState.thumbnailZoomCoverFlow;
+
+    StatePersistence::writeToMemoryBlock(state, destData);
 }
 
 void PluginProcessor::setStateInformation(const void* data, int sizeInBytes)
 {
-    juce::ignoreUnused(data, sizeInBytes);
+    if (data == nullptr || sizeInBytes <= 0)
+        return;
+
+    const auto restoredState = StatePersistence::readFromMemoryBlock(data, sizeInBytes);
+
+    if (restoredState.sampleLibraryPath.isNotEmpty())
+        setSampleLibraryPath(restoredState.sampleLibraryPath);
+
+    browseState.packViewMode = restoredState.packViewMode;
+    browseState.focusedPackId = restoredState.focusedPackId;
+    if (!restoredState.selectedSamplePath.empty())
+        browseState.selectedSamplePath = std::filesystem::path(restoredState.selectedSamplePath);
+
+    browseState.thumbnailZoomGrid = restoredState.thumbnailZoomGrid;
+    browseState.thumbnailZoomList = restoredState.thumbnailZoomList;
+    browseState.thumbnailZoomCoverFlow = restoredState.thumbnailZoomCoverFlow;
 }
 
 void PluginProcessor::ensureSettings()

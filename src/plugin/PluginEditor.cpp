@@ -8,7 +8,8 @@ namespace samplebox
 PluginEditor::PluginEditor(PluginProcessor& p)
     : AudioProcessorEditor(&p),
       processor(p),
-      mainPanel([&p] { return p.getSampleLibraryPath(); },
+      mainPanel(p.getBrowseState(),
+                [&p] { return p.getSampleLibraryPath(); },
                 [this](const juce::String& path) {
                     processor.setSampleLibraryPath(path);
                     startScan(juce::File(path));

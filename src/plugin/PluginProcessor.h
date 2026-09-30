@@ -47,6 +47,9 @@ public:
     juce::String getSampleLibraryPath() const;
     void setSampleLibraryPath(const juce::String& path);
 
+    BrowseState& getBrowseState() { return browseState; }
+    const BrowseState& getBrowseState() const { return browseState; }
+
     LibraryScanner& getScanner() { return scanner; }
     PreviewEngine& getPreviewEngine() { return previewEngine; }
 
@@ -54,6 +57,7 @@ private:
     void ensureSettings();
 
     std::unique_ptr<juce::PropertiesFile> settings;
+    BrowseState browseState;
     LibraryScanner scanner;
     PreviewEngine previewEngine;
     juce::AudioBuffer<float> previewBuffer;

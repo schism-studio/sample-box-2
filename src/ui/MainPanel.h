@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "../core/BrowseState.h"
 #include "BrowserView.h"
@@ -27,14 +27,23 @@ public:
               SettingsComponent::SetPath setPath,
               PlaySample playSample = {});
 
+    MainPanel(BrowseState& sharedBrowseState,
+              SettingsComponent::GetPath getPath,
+              SettingsComponent::SetPath setPath,
+              PlaySample playSample = {});
+
     void setLibrary(LibrarySnapshotPtr snapshot);
     void setStatusText(const juce::String& text);
+
+    BrowseState& getBrowseState() { return browseState; }
+    const BrowseState& getBrowseState() const { return browseState; }
 
     void paint(juce::Graphics& graphics) override;
     void resized() override;
 
 private:
-    BrowseState browseState;
+    BrowseState defaultBrowseState;
+    BrowseState& browseState;
     juce::Label titleLabel;
     SettingsComponent settingsStrip;
     BrowserView browserView;
