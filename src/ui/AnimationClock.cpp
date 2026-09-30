@@ -8,6 +8,9 @@ AnimationClock::AnimationClock(Tick tick) : onTick(std::move(tick)) {}
 
 void AnimationClock::start(int framesPerSecond)
 {
+    if (isTimerRunning())
+        return;
+
     lastTickSeconds = juce::Time::getMillisecondCounterHiRes() * 0.001;
     startTimerHz(framesPerSecond);
 }

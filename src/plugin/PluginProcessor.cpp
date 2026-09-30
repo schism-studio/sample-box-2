@@ -8,22 +8,32 @@ PluginProcessor::PluginProcessor()
                           .withInput("Input", juce::AudioChannelSet::stereo(), true)
                           .withOutput("Output", juce::AudioChannelSet::stereo(), true))
 {
-    loadSettings();
 }
 
 PluginProcessor::~PluginProcessor() = default;
 
-void PluginProcessor::prepareToPlay(double, int) {}
+void PluginProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
+{
+    previewEngine.prepareToPlay(samplesPerBlock, sampleRate);
+    previewBuffer.setSize(juce::jmax(2, getTotalNumOutputChannels()), samplesPerBlock);
+}
 
-void PluginProcessor::releaseResources() {}
+void PluginProcessor::releaseResources()
+{
+    previewEngine.releaseResources();
+}
 
 bool PluginProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
 {
-    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::mono()
-        && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
+    const auto input = layouts.getMainInputChannelSet();
+    const auto output = layouts.getMainOutputChannelSet();
+
+    if (output != juce::AudioChannelSet::mono()
+        && output != juce::AudioChannelSet::stereo())
         return false;
 
-    return layouts.getMainInputChannelSet() == layouts.getMainOutputChannelSet();
+    return input.isDisabled()
+        || input == output;
 }
 
 void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
@@ -34,8 +44,19 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
     for (auto i = getTotalNumInputChannels(); i < getTotalNumOutputChannels(); ++i)
         buffer.clear(i, 0, buffer.getNumSamples());
 
-    // Pass-through: no processing. Sample previewing happens through the
-    // editor's own PreviewEngine, not the plugin's audio bus.
+    // Preview is mixed in here rather than played through a separate device,
+    // because the host owns the audio device in a VST3 - there is no other
+    // path that reaches an output. See docs/decisions/0002-preview-audio-path.md.
+    if (!isNonRealtime())
+    {
+        previewBuffer.setSize(buffer.getNumChannels(), buffer.getNumSamples(), false, false, true);
+        previewBuffer.clear();
+        juce::AudioSourceChannelInfo info(&previewBuffer, 0, buffer.getNumSamples());
+        previewEngine.getNextAudioBlock(info);
+
+        for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+            buffer.addFrom(ch, 0, previewBuffer, ch, 0, buffer.getNumSamples());
+    }
 }
 
 juce::AudioProcessorEditor* PluginProcessor::createEditor()
@@ -53,8 +74,11 @@ void PluginProcessor::setStateInformation(const void* data, int sizeInBytes)
     juce::ignoreUnused(data, sizeInBytes);
 }
 
-void PluginProcessor::loadSettings()
+void PluginProcessor::ensureSettings()
 {
+    if (settings != nullptr)
+        return;
+
     juce::PropertiesFile::Options opts;
     opts.applicationName = "SampleBox";
     opts.filenameSuffix = "xml";
@@ -66,16 +90,15 @@ void PluginProcessor::loadSettings()
 
 juce::String PluginProcessor::getSampleLibraryPath() const
 {
-    return settings != nullptr ? settings->getValue("sampleLibraryPath", "") : juce::String();
+    const_cast<PluginProcessor*>(this)->ensureSettings();
+    return settings->getValue("sampleLibraryPath", "");
 }
 
 void PluginProcessor::setSampleLibraryPath(const juce::String& path)
 {
-    if (settings != nullptr)
-    {
-        settings->setValue("sampleLibraryPath", path);
-        settings->saveIfNeeded();
-    }
+    ensureSettings();
+    settings->setValue("sampleLibraryPath", path);
+    settings->saveIfNeeded();
 }
 }
 

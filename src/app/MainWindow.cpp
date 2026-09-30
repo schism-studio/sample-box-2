@@ -22,7 +22,8 @@ MainWindow::MainWindow(const juce::String& name)
     : DocumentWindow(name, theme::background, DocumentWindow::allButtons),
       settings(std::make_unique<juce::PropertiesFile>(makeSettingsOptions())),
       mainPanel([this] { return getLibraryPath(); },
-                 [this](const juce::String& path) { setLibraryPath(path); })
+                [this](const juce::String& path) { setLibraryPath(path); },
+                [this](const std::filesystem::path& samplePath) { previewEngine.play(samplePath); })
 {
     setLookAndFeel(&lookAndFeel);
     setUsingNativeTitleBar(true);
@@ -35,6 +36,15 @@ MainWindow::MainWindow(const juce::String& name)
     centreWithSize(1200, 760);
     setVisible(true);
 
+    // Preview audio: the standalone owns its device outright, so the engine
+    // is driven directly, unlike the VST3 which mixes into processBlock.
+    // addAudioCallback must precede setSource - AudioSourcePlayer only calls
+    // prepareToPlay immediately if it already knows the sample rate, which it
+    // only learns once the callback is registered and the device starts.
+    audioDeviceManager.initialiseWithDefaultDevices(0, 2);
+    audioDeviceManager.addAudioCallback(&audioSourcePlayer);
+    audioSourcePlayer.setSource(&previewEngine);
+
     const auto savedPath = getLibraryPath();
     if (savedPath.isNotEmpty())
         startScan(juce::File(savedPath));
@@ -42,6 +52,8 @@ MainWindow::MainWindow(const juce::String& name)
 
 MainWindow::~MainWindow()
 {
+    audioSourcePlayer.setSource(nullptr);
+    audioDeviceManager.removeAudioCallback(&audioSourcePlayer);
     setLookAndFeel(nullptr);
 }
 
@@ -70,8 +82,8 @@ void MainWindow::startScan(const juce::File& root)
     mainPanel.setStatusText("Scanning...");
     scanner.scanAsync(
         std::filesystem::path(root.getFullPathName().toStdString()),
-        [this](LibrarySnapshot snapshot) {
-            const auto count = snapshot.packs.size();
+        [this](LibrarySnapshotPtr snapshot) {
+            const auto count = snapshot != nullptr ? snapshot->packs.size() : 0u;
             mainPanel.setLibrary(std::move(snapshot));
             mainPanel.setStatusText(juce::String((int) count) + " packs indexed");
         });

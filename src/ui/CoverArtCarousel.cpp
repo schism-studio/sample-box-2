@@ -6,20 +6,36 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace samplebox
 {
-CoverArtCarousel::CoverArtCarousel()
-    : artworkCache(std::make_unique<ArtworkCache>()),
-      animationClock([this](double deltaSeconds) { advanceAnimation(deltaSeconds); })
+namespace
 {
-    animationClock.start();
+// Below this much remaining travel the motion is sub-pixel at any plausible
+// cover size, so the carousel is treated as settled and the clock is stopped.
+constexpr float kScrollSettleEpsilon = 0.001f;
+}
+
+CoverArtCarousel::CoverArtCarousel(SampleSelected sampleSelectedCallback)
+    : artworkCache(std::make_unique<ArtworkCache>()),
+      animationClock([this](double deltaSeconds) { advanceAnimation(deltaSeconds); }),
+      onSampleSelected(std::move(sampleSelectedCallback))
+{
+    // The clock is deliberately not started here. It runs only while the
+    // carousel is actually moving, and stops itself once it settles.
 }
 
 CoverArtCarousel::~CoverArtCarousel() = default;
 
-void CoverArtCarousel::setLibrary(LibrarySnapshot snapshot)
+void CoverArtCarousel::setLibrary(LibrarySnapshotPtr snapshot)
 {
+    // Destroy the cards that point into the previous snapshot *before* dropping
+    // this carousel's reference to it. Order matters less now that each card
+    // holds its own share of the snapshot, but tearing down in this order keeps
+    // the lifetime obvious rather than relying on the shared count.
+    cards.clear();
+
     library = std::move(snapshot);
     targetScrollPosition = 0.0f;
     scrollPosition = 0.0f;
@@ -29,19 +45,64 @@ void CoverArtCarousel::setLibrary(LibrarySnapshot snapshot)
 void CoverArtCarousel::rebuildCards()
 {
     cards.clear();
-    for (const auto& pack : library.packs)
+
+    if (library == nullptr)
     {
-        auto card = std::make_unique<CoverArtCard>(pack, *artworkCache);
+        resized();
+        return;
+    }
+
+    for (std::size_t index = 0; index < library->packs.size(); ++index)
+    {
+        auto card = std::make_unique<CoverArtCard>(library,
+                                                   index,
+                                                   *artworkCache,
+                                                   [this](std::size_t clickedPackIndex) {
+                                                       auditionRandomSample(clickedPackIndex);
+                                                   });
         addAndMakeVisible(*card);
         cards.push_back(std::move(card));
     }
+
     resized();
+}
+
+void CoverArtCarousel::auditionRandomSample(std::size_t packIndex)
+{
+    if (library == nullptr || packIndex >= library->packs.size() || !onSampleSelected)
+        return;
+
+    const auto& samples = library->packs[packIndex].sampleFiles;
+    if (samples.empty())
+        return;
+
+    std::uniform_int_distribution<std::size_t> chooseSample(0, samples.size() - 1);
+    onSampleSelected(samples[chooseSample(randomEngine)]);
+}
+
+void CoverArtCarousel::startAnimationIfNeeded()
+{
+    if (std::abs(targetScrollPosition - scrollPosition) > kScrollSettleEpsilon)
+        animationClock.start();
 }
 
 void CoverArtCarousel::advanceAnimation(double deltaSeconds)
 {
+    const auto remaining = targetScrollPosition - scrollPosition;
+
+    if (std::abs(remaining) <= kScrollSettleEpsilon)
+    {
+        // Land exactly on the target instead of asymptotically approaching it,
+        // then stop the clock. Without this the exponential ease never quite
+        // arrives and the timer would run forever.
+        scrollPosition = targetScrollPosition;
+        animationClock.stop();
+        resized();
+        return;
+    }
+
     const auto smoothing = static_cast<float>(std::min(1.0, deltaSeconds * 12.0));
-    scrollPosition += (targetScrollPosition - scrollPosition) * smoothing;
+    scrollPosition += remaining * smoothing;
     resized();
 }
 
@@ -50,7 +111,7 @@ void CoverArtCarousel::resized()
     const auto centreX = getWidth() * 0.5f;
     const auto centreY = getHeight() * 0.5f;
 
-    for (size_t index = 0; index < cards.size(); ++index)
+    for (std::size_t index = 0; index < cards.size(); ++index)
     {
         const auto offset = static_cast<float>(index) - scrollPosition;
         const auto distance = std::abs(offset);
@@ -71,7 +132,9 @@ void CoverArtCarousel::mouseWheelMove(const juce::MouseEvent&, const juce::Mouse
     if (cards.empty())
         return;
 
-    const auto movement = details.deltaY != 0.0f ? -details.deltaY : details.deltaX;
+    const auto movement = details.deltaY != 0.0f ? details.deltaY : details.deltaX;
     targetScrollPosition = juce::jlimit(0.0f, static_cast<float>(cards.size() - 1), targetScrollPosition + movement * 2.0f);
+
+    startAnimationIfNeeded();
 }
 }

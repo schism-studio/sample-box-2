@@ -9,10 +9,13 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     : AudioProcessorEditor(&p),
       processor(p),
       mainPanel([&p] { return p.getSampleLibraryPath(); },
-                 [this](const juce::String& path) {
-                     processor.setSampleLibraryPath(path);
-                     startScan(juce::File(path));
-                 })
+                [this](const juce::String& path) {
+                    processor.setSampleLibraryPath(path);
+                    startScan(juce::File(path));
+                },
+                [&p](const std::filesystem::path& samplePath) {
+                    p.getPreviewEngine().play(samplePath);
+                })
 {
     setLookAndFeel(&lookAndFeel);
     addAndMakeVisible(mainPanel);
@@ -47,12 +50,23 @@ void PluginEditor::startScan(const juce::File& root)
         return;
 
     mainPanel.setStatusText("Scanning...");
+
+    // The scanner is owned by the *processor*, which outlives this editor: a
+    // DAW may close and reopen the plugin window freely, and it is allowed to
+    // do so while a scan of a large library is still running. Capturing a raw
+    // `this` here would leave the completion callback writing into a destroyed
+    // editor. A SafePointer is nulled automatically when the Component dies,
+    // and is safe to test here because the scanner always delivers its
+    // completion on the message thread via MessageManager::callAsync.
     processor.getScanner().scanAsync(
         std::filesystem::path(root.getFullPathName().toStdString()),
-        [this](LibrarySnapshot snapshot) {
-            const auto count = snapshot.packs.size();
-            mainPanel.setLibrary(std::move(snapshot));
-            mainPanel.setStatusText(juce::String((int) count) + " packs indexed");
+        [safeEditor = juce::Component::SafePointer<PluginEditor>(this)](LibrarySnapshotPtr snapshot) {
+            if (safeEditor == nullptr)
+                return;
+
+            const auto count = snapshot != nullptr ? snapshot->packs.size() : 0u;
+            safeEditor->mainPanel.setLibrary(std::move(snapshot));
+            safeEditor->mainPanel.setStatusText(juce::String((int) count) + " packs indexed");
         });
 }
 }
