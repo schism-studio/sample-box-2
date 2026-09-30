@@ -3,27 +3,26 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_audio_utils/juce_audio_utils.h>
 
+#include <atomic>
 #include <filesystem>
 #include <memory>
 
 namespace samplebox
 {
-// Single-voice, instant-choke sample preview player. Starting a new
-// preview immediately stops whatever was previously playing, matching the
-// click-free retrigger behaviour of the original TypeScript PreviewVoice
-// prototype. Used by both the standalone app and the VST3 editor for the
-// front-cover Play button audition path (unchanged by the VST3 pivot).
+// Single-voice sample preview player with click-free 5ms fade-out/fade-in
+// smoothing on choke and stop. Prevents pops and abrupt discontinuities
+// during auditioning.
 class PreviewEngine final : public juce::AudioSource
 {
 public:
     PreviewEngine();
     ~PreviewEngine() override;
 
-    // Immediately chokes any currently-playing preview and starts playing
-    // `file` from the start. Returns false if the file could not be opened.
+    // Smoothly chokes any active preview and starts playing `file` from the start.
+    // Returns false if the file could not be opened.
     bool play(const std::filesystem::path& file);
 
-    // Stops playback without starting a new preview.
+    // Triggers a click-free 5ms fade-out stop without starting a new preview.
     void stop();
 
     bool isPlaying() const;
@@ -34,9 +33,16 @@ public:
     void getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferToFill) override;
 
 private:
+    void applyGainRamping(const juce::AudioSourceChannelInfo& bufferToFill);
+
     juce::AudioFormatManager formatManager;
     juce::AudioTransportSource transportSource;
     std::unique_ptr<juce::AudioFormatReaderSource> readerSource;
+
+    double currentSampleRate = 44100.0;
+    std::atomic<bool> isFadingOut { false };
+    float currentGain = 1.0f;
+    float fadeOutStep = 0.01f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PreviewEngine)
 };

@@ -16,6 +16,9 @@ PluginEditor::PluginEditor(PluginProcessor& p)
                 },
                 [&p](const std::filesystem::path& samplePath) {
                     p.getPreviewEngine().play(samplePath);
+                },
+                [&p]() {
+                    p.getPreviewEngine().stop();
                 })
 {
     setLookAndFeel(&lookAndFeel);
@@ -65,9 +68,8 @@ void PluginEditor::startScan(const juce::File& root)
             if (safeEditor == nullptr)
                 return;
 
-            const auto count = snapshot != nullptr ? snapshot->packs.size() : 0u;
             safeEditor->mainPanel.setLibrary(std::move(snapshot));
-            safeEditor->mainPanel.setStatusText(juce::String((int) count) + " packs indexed");
+            safeEditor->mainPanel.setStatusText("Idle");
         });
 }
 }

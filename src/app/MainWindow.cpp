@@ -23,7 +23,8 @@ MainWindow::MainWindow(const juce::String& name)
       settings(std::make_unique<juce::PropertiesFile>(makeSettingsOptions())),
       mainPanel([this] { return getLibraryPath(); },
                 [this](const juce::String& path) { setLibraryPath(path); },
-                [this](const std::filesystem::path& samplePath) { previewEngine.play(samplePath); })
+                [this](const std::filesystem::path& samplePath) { previewEngine.play(samplePath); },
+                [this]() { previewEngine.stop(); })
 {
     setLookAndFeel(&lookAndFeel);
     setUsingNativeTitleBar(true);
@@ -83,9 +84,8 @@ void MainWindow::startScan(const juce::File& root)
     scanner.scanAsync(
         std::filesystem::path(root.getFullPathName().toStdString()),
         [this](LibrarySnapshotPtr snapshot) {
-            const auto count = snapshot != nullptr ? snapshot->packs.size() : 0u;
             mainPanel.setLibrary(std::move(snapshot));
-            mainPanel.setStatusText(juce::String((int) count) + " packs indexed");
+            mainPanel.setStatusText("Idle");
         });
 }
 }
