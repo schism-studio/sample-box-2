@@ -250,6 +250,42 @@ void testDoesNotDescendIntoMacosxDirectories()
     CHECK_EQ(snapshot->tally.sampleFiles, 1u);
 }
 
+void testHidesEmptyAndUntriggerablePacks()
+{
+    ScopedTempDirectory temp { "empty-packs" };
+
+    // These immediate subfolders must not create browser cards because none
+    // contains a triggerable sample.
+    temp.makeDirectory("Empty");
+    temp.makeFile("Artwork Only/cover.png");
+    temp.makeFile("Documentation/readme.txt");
+    temp.makeFile("Sidecars/._kick.wav");
+    temp.makeFile("Hidden/.DS_Store");
+    temp.makeFile("Zero Byte/empty.wav", "");
+
+    // A recursive playable file is enough to make this a visible pack.
+    temp.makeFile("Playable/Nested/kick.wav");
+
+    samplebox::LibraryScanner scanner;
+    const auto snapshot = scanner.scanTreeNow(temp.path(), nullptr);
+
+    CHECK_EQ(snapshot->packs.size(), 1u);
+    CHECK_EQ(snapshot->tally.sampleFiles, 1u);
+    CHECK_EQ(snapshot->tally.ignoredFiles, 2u);
+
+    const auto* playable = findPack(*snapshot, "Playable");
+    CHECK(playable != nullptr);
+    if (playable != nullptr)
+        CHECK_EQ(playable->sampleFiles.size(), 1u);
+
+    CHECK(findPack(*snapshot, "Empty") == nullptr);
+    CHECK(findPack(*snapshot, "Artwork Only") == nullptr);
+    CHECK(findPack(*snapshot, "Documentation") == nullptr);
+    CHECK(findPack(*snapshot, "Sidecars") == nullptr);
+    CHECK(findPack(*snapshot, "Hidden") == nullptr);
+    CHECK(findPack(*snapshot, "Zero Byte") == nullptr);
+}
+
 void testSkipsIgnoredTopLevelDirectoriesAsPacks()
 {
     ScopedTempDirectory temp { "toplevel" };
@@ -258,9 +294,8 @@ void testSkipsIgnoredTopLevelDirectoriesAsPacks()
     temp.makeFile("__MACOSX/._something.wav");
     temp.makeFile(".hidden/kick.wav");
 
-    // A loose file at the library root is not a pack and is currently dropped
-    // (defect D8, still open). Asserted so the existing behaviour is pinned
-    // down rather than assumed.
+    // Loose files in the selected root are deliberately ignored. The root is
+    // a container of pack folders, not a pack/card of its own.
     temp.makeFile("stray.wav");
 
     samplebox::LibraryScanner scanner;
@@ -364,6 +399,7 @@ int main()
     testCountsPacksAndSamples();
     testIgnoresNonAudioAndJunk();
     testDoesNotDescendIntoMacosxDirectories();
+    testHidesEmptyAndUntriggerablePacks();
     testSkipsIgnoredTopLevelDirectoriesAsPacks();
     testResolvesCoverArt();
     testMissingRootYieldsEmptySnapshot();
