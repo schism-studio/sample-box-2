@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "../core/StatePersistence.h"
+#include "../ui/OptionsStore.h"
 
 namespace samplebox
 {
@@ -124,6 +125,19 @@ void PluginProcessor::setSampleLibraryPath(const juce::String& path)
     ensureSettings();
     settings->setValue("sampleLibraryPath", path);
     settings->saveIfNeeded();
+}
+
+AppOptions PluginProcessor::getOptions() const
+{
+    const_cast<PluginProcessor*>(this)->ensureSettings();
+    return loadOptions(*settings);
+}
+
+void PluginProcessor::setOptions(const AppOptions& o)
+{
+    ensureSettings();
+    saveOptions(*settings, o);
+    previewEngine.setVolume(o.previewVolume);
 }
 }
 

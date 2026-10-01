@@ -25,6 +25,9 @@ public:
     // Triggers a click-free 5ms fade-out stop without starting a new preview.
     void stop();
 
+    // Linear preview gain (0..1). Thread-safe; applied on the audio thread.
+    void setVolume(float linearGain) noexcept { volume.store(linearGain, std::memory_order_relaxed); }
+
     bool isPlaying() const;
 
     // juce::AudioSource
@@ -41,6 +44,7 @@ private:
 
     double currentSampleRate = 44100.0;
     std::atomic<bool> isFadingOut { false };
+    std::atomic<float> volume { 1.0f };
     float currentGain = 1.0f;
     float fadeOutStep = 0.01f;
 

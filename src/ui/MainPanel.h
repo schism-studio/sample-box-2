@@ -4,6 +4,7 @@
 #include "BrowserView.h"
 #include "SettingsComponent.h"
 #include "ToastNotification.h"
+#include "OptionsComponent.h"
 
 #if SAMPLEBOX_DRAG_SPIKE
 #include "DragDropSpike.h"
@@ -40,6 +41,12 @@ public:
     void setStatusText(const juce::String& text);
     void showToast(const juce::String& message, int durationMs = 3500);
 
+    using OptionsChanged = std::function<void(const AppOptions&)>;
+
+    // Call once from the host after construction. Applies the options immediately,
+    // then reports every later change through onChanged so the host can persist it.
+    void configureOptions(const AppOptions& initial, OptionsChanged onChanged);
+
     BrowseState& getBrowseState() { return browseState; }
     const BrowseState& getBrowseState() const { return browseState; }
 
@@ -64,6 +71,16 @@ private:
     // TEMPORARY. Remove with src/ui/DragDropSpike.* — see that header.
     DragDropSpike dragSpike;
 #endif
+
+    enum class Tab { browse, options };
+    void showTab(Tab tab);
+    void applyOptions(const AppOptions& o);
+
+    Tab currentTab = Tab::browse;
+    juce::TextButton browseTabButton { "Browse" };
+    juce::TextButton optionsTabButton { "Options" };
+    OptionsComponent optionsPanel;
+    OptionsChanged onOptionsChanged;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainPanel)
 };

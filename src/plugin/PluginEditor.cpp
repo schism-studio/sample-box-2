@@ -28,6 +28,10 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     setResizeLimits(700, 450, 2400, 1600);
     setSize(1200, 760);
 
+    // Global options: load, apply, and persist through the processor's settings file.
+    const auto options = processor.getOptions();
+    processor.getPreviewEngine().setVolume(options.previewVolume);
+    mainPanel.configureOptions(options, [this](const AppOptions& o) { processor.setOptions(o); });
     const auto savedPath = processor.getSampleLibraryPath();
     if (savedPath.isNotEmpty())
         startScan(juce::File(savedPath));

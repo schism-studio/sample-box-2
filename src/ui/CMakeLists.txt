@@ -7,6 +7,7 @@ add_library(SampleBox_UI
   DragDropSpike.cpp
   LookAndFeel.cpp
   MainPanel.cpp
+  OptionsComponent.cpp
   SettingsComponent.cpp
   SidebarBrowser.cpp
 )

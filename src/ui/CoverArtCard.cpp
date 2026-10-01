@@ -45,6 +45,14 @@ void CoverArtCard::setVisualState(float newScale, float newOpacity, bool isSelec
         repaint();
 }
 
+void CoverArtCard::setShowTitle(bool show)
+{
+    if (showTitle == show)
+        return;
+    showTitle = show;
+    repaint();
+}
+
 void CoverArtCard::paint(juce::Graphics& graphics)
 {
     const auto* pack = getPack();
@@ -82,11 +90,14 @@ void CoverArtCard::paint(juce::Graphics& graphics)
                              artworkBounds.getHeight(),
                              juce::RectanglePlacement::centred);
 
-    graphics.setColour(theme::textPrimary);
+    if (showTitle)
+    {
+        graphics.setColour(theme::textPrimary);
     graphics.setFont(selected ? 17.0f : 15.0f);
     graphics.drawFittedText(pack->title,
                             getLocalBounds().reduced(12).removeFromBottom(34),
                             juce::Justification::centred,
                             2);
+    }
 }
 }

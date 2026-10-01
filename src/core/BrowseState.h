@@ -53,6 +53,7 @@ struct BrowseState
     double thumbnailZoomGrid = 0.5;
     double thumbnailZoomList = 0.5;
     double thumbnailZoomCoverFlow = 0.5;
+    bool showCoverTitles = true;
 
     void addListener(Listener* listener)
     {

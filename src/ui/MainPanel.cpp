@@ -40,6 +40,24 @@ MainPanel::MainPanel(BrowseState& sharedBrowseState,
 
     addAndMakeVisible(settingsStrip);
     addAndMakeVisible(browserView);
+
+    for (auto* b : { &browseTabButton, &optionsTabButton })
+    {
+        b->setClickingTogglesState(true);
+        b->setRadioGroupId(1001);
+        addAndMakeVisible(*b);
+    }
+    browseTabButton.onClick  = [this] { showTab(Tab::browse); };
+    optionsTabButton.onClick = [this] { showTab(Tab::options); };
+
+    addChildComponent(optionsPanel);
+    optionsPanel.onChanged = [this](const AppOptions& o)
+    {
+        applyOptions(o);
+        if (onOptionsChanged)
+            onOptionsChanged(o);
+    };
+    showTab(Tab::browse);
     addChildComponent(toastNotification);
 
 #if SAMPLEBOX_DRAG_SPIKE
@@ -101,26 +119,53 @@ void MainPanel::paint(juce::Graphics& graphics)
 void MainPanel::resized()
 {
     auto bounds = getLocalBounds();
-
     auto header = bounds.removeFromTop(48).reduced(14, 0);
     stopButton.setBounds(header.removeFromRight(76).reduced(0, 8));
-    titleLabel.setBounds(header);
+    titleLabel.setBounds(header.removeFromLeft(150));
+    browseTabButton.setBounds(header.removeFromLeft(90).reduced(2, 8));
+    optionsTabButton.setBounds(header.removeFromLeft(90).reduced(2, 8));
 
-    settingsStrip.setBounds(bounds.removeFromTop(66).reduced(12, 6));
+    // Options tab: library-folder strip on top, option rows below.
+    auto content = bounds;
+    settingsStrip.setBounds(content.removeFromTop(66).reduced(12, 6));
+    optionsPanel.setBounds(content);
 
 #if SAMPLEBOX_DRAG_SPIKE
-    // Bottom-left corner, deliberately in the way. It is a diagnostic, and it
-    // should be impossible to forget it is still compiled in.
     dragSpike.setBounds(bounds.removeFromBottom(96).removeFromLeft(280).reduced(12, 6));
 #endif
 
     browserView.setBounds(bounds);
 
-    // Center toast at bottom of main panel
     constexpr int toastWidth = 360;
     constexpr int toastHeight = 36;
-    const int toastX = (getWidth() - toastWidth) / 2;
-    const int toastY = getHeight() - toastHeight - 20;
-    toastNotification.setBounds(toastX, toastY, toastWidth, toastHeight);
+    toastNotification.setBounds((getWidth() - toastWidth) / 2,
+                                getHeight() - toastHeight - 20,
+                                toastWidth, toastHeight);
+}
+
+void MainPanel::configureOptions(const AppOptions& initial, OptionsChanged onChanged)
+{
+    onOptionsChanged = std::move(onChanged);
+    optionsPanel.setOptions(initial);
+    applyOptions(initial);
+}
+
+void MainPanel::applyOptions(const AppOptions& o)
+{
+    browseState.showCoverTitles = o.showCoverTitles;
+    browseState.setPackViewMode(o.defaultViewMode);
+    browserView.refresh();
+}
+
+void MainPanel::showTab(Tab tab)
+{
+    currentTab = tab;
+    const bool opts = (tab == Tab::options);
+    browserView.setVisible(!opts);
+    optionsPanel.setVisible(opts);
+    settingsStrip.setVisible(opts);
+    browseTabButton.setToggleState(!opts, juce::dontSendNotification);
+    optionsTabButton.setToggleState(opts, juce::dontSendNotification);
+    resized();
 }
 }

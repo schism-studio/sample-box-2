@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "../ui/OptionsStore.h"
 #include "../ui/Theme.h"
 
 #include <filesystem>
@@ -32,6 +33,15 @@ MainWindow::MainWindow(const juce::String& name)
     setResizeLimits(700, 450, 2400, 1600);
 
     setContentNonOwned(&mainPanel, false);
+
+    // Global options: load, apply, and persist through the shared settings file.
+    const auto options = loadOptions(*settings);
+    previewEngine.setVolume(options.previewVolume);
+    mainPanel.configureOptions(options, [this](const AppOptions& o)
+    {
+        previewEngine.setVolume(o.previewVolume);
+        saveOptions(*settings, o);
+    });
     mainPanel.setSize(1200, 760);
 
     centreWithSize(1200, 760);

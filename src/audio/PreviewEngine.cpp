@@ -79,6 +79,9 @@ void PreviewEngine::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
     if (bufferToFill.buffer == nullptr || bufferToFill.numSamples <= 0)
         return;
 
+    bufferToFill.buffer->applyGain(bufferToFill.startSample, bufferToFill.numSamples,
+                                   volume.load(std::memory_order_relaxed));
+
     if (isFadingOut.load(std::memory_order_acquire))
     {
         for (int sample = 0; sample < bufferToFill.numSamples; ++sample)

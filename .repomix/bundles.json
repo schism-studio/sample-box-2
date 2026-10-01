@@ -1,0 +1,21 @@
+{
+  "bundles": {
+    "phase1a-718": {
+      "name": "phase1a",
+      "created": "2026-10-01T00:15:27.781Z",
+      "lastUsed": "2026-10-01T00:15:27.781Z",
+      "tags": [],
+      "files": [
+        "tests",
+        "src"
+      ]
+    },
+    "phase1-391": {
+      "name": "phase1",
+      "created": "2026-10-01T00:17:10.618Z",
+      "lastUsed": "2026-10-01T00:17:10.618Z",
+      "tags": [],
+      "files": []
+    }
+  }
+}

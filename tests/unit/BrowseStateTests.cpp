@@ -48,7 +48,7 @@ struct TestListener : public samplebox::BrowseState::Listener
 samplebox::LibrarySnapshotPtr createMockLibrary(std::size_t count)
 {
     auto snapshot = std::make_shared<samplebox::LibrarySnapshot>();
-    snapshot->rootPath = "D:/MockLibrary";
+
     snapshot->packs.reserve(count);
 
     for (std::size_t i = 0; i < count; ++i)

@@ -182,6 +182,7 @@ void CoverArtCarousel::layoutVisibleCards()
     {
         auto& card = *cardPool[poolIdx];
         card.bindToPack(browseState.snapshot, static_cast<std::size_t>(index));
+        card.setShowTitle(browseState.showCoverTitles);
 
         const auto offset = static_cast<float>(index) - scrollPosition;
         const auto distance = std::abs(offset);

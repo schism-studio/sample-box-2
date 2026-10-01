@@ -1,6 +1,8 @@
 #pragma once
 
 #include "../audio/PreviewEngine.h"
+#include "../core/AppOptions.h"
+#include "../core/BrowseState.h"
 #include "../indexing/LibraryScanner.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -45,6 +47,8 @@ public:
     void setStateInformation(const void* data, int sizeInBytes) override;
 
     juce::String getSampleLibraryPath() const;
+    AppOptions getOptions() const;
+    void setOptions(const AppOptions& o);
     void setSampleLibraryPath(const juce::String& path);
 
     BrowseState& getBrowseState() { return browseState; }

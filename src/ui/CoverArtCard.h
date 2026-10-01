@@ -25,6 +25,7 @@ public:
     void paint(juce::Graphics& graphics) override;
     void mouseDown(const juce::MouseEvent&) override;
     void setVisualState(float scale, float opacity, bool selected);
+    void setShowTitle(bool show);
 
     [[nodiscard]] std::size_t getPackIndex() const noexcept { return packIndex; }
     [[nodiscard]] bool hasValidPack() const noexcept
@@ -47,5 +48,6 @@ private:
     float scale = 1.0f;
     float opacity = 1.0f;
     bool selected = false;
+    bool showTitle = true;
 };
 }
