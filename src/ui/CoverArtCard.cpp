@@ -64,7 +64,9 @@ void CoverArtCard::paint(juce::Graphics& graphics)
     graphics.setColour(theme::surface);
     graphics.fillRoundedRectangle(bounds, theme::cardCornerRadius);
 
-    const auto artworkBounds = bounds.reduced(12.0f).withTrimmedBottom(46.0f);
+    const auto artworkBounds = showTitle
+                                ? bounds.reduced(12.0f).withTrimmedBottom(46.0f)
+                                : bounds.reduced(12.0f);
     constexpr int coverFlowThumbnailSize = 320;
     const auto thumbnailWidth = coverFlowThumbnailSize;
     const auto thumbnailHeight = coverFlowThumbnailSize;

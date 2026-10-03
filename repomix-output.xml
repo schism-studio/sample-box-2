@@ -32,7 +32,7 @@ The content is organized as follows:
 <notes>
 - Some files may have been excluded based on .gitignore rules and Repomix's configuration
 - Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
-- Only files matching these patterns are included: cmake, scripts, src, tests, CMakePresets.json, CMakeLists.txt
+- Only files matching these patterns are included: src, scripts
 - Files matching patterns in .gitignore are excluded
 - Files matching default ignore patterns are excluded
 - Files are sorted by Git change count (files with more changes are at the bottom)
@@ -41,8 +41,6 @@ The content is organized as follows:
 </file_summary>
 
 <directory_structure>
-cmake/
-  SampleBoxOptions.cmake
 scripts/
   build.bat
   build.ps1
@@ -120,23 +118,6 @@ src/
     ToastNotification.h
   CMakeLists.txt
   repomix-output.xml
-tests/
-  fixtures/
-    sample-library/
-      .gitkeep
-    tiny-wav/
-      .gitkeep
-  integration/
-    .gitkeep
-    CMakeLists.txt
-  unit/
-    BrowseStateTests.cpp
-    CMakeLists.txt
-    ScannerTests.cpp
-    StatePersistenceTests.cpp
-  CMakeLists.txt
-CMakeLists.txt
-CMakePresets.json
 </directory_structure>
 
 <files>
@@ -193,22 +174,6 @@ private:
 }
 
 START_JUCE_APPLICATION(SampleBoxApplication)
-</file>
-
-<file path="src/core/AppOptions.h">
-#pragma once
-#include "BrowseState.h"
-
-namespace samplebox
-{
-// Global user options. Persisted by the host (standalone + plug-in share one PropertiesFile).
-struct AppOptions
-{
-    PackViewMode defaultViewMode = PackViewMode::coverFlow;
-    bool showCoverTitles = true;      // matches the previous always-on behaviour
-    float previewVolume = 1.0f;       // linear gain, 0..1
-};
-}
 </file>
 
 <file path="src/UI/AnimationClock.cpp">
@@ -541,24 +506,60 @@ BrowserView::BrowserView(BrowseState& browseState, SampleSelected onSampleSelect
     : state(browseState),
       carousel(std::make_unique<CoverArtCarousel>(browseState, std::move(onSampleSelected)))
 {
+    state.addListener(this);
     addAndMakeVisible(*carousel);
+    updateActiveView();
 }
 
-BrowserView::~BrowserView() = default;
+BrowserView::~BrowserView()
+{
+    state.removeListener(this);
+}
 
 void BrowserView::refresh()
 {
     carousel->refresh();
+    updateActiveView();
 }
 
 void BrowserView::paint(juce::Graphics& graphics)
 {
     graphics.fillAll(theme::background);
+
+    if (state.packViewMode == PackViewMode::coverFlow)
+        return;
+
+    const auto modeName = state.packViewMode == PackViewMode::grid ? "Grid" : "List";
+    const auto bounds = getLocalBounds().toFloat();
+
+    graphics.setColour(theme::textPrimary);
+    graphics.setFont(20.0f);
+    graphics.drawText(juce::String(modeName) + " view is under construction",
+                      bounds.withTrimmedBottom(22.0f),
+                      juce::Justification::centred);
+
+    graphics.setColour(theme::textSecondary);
+    graphics.setFont(14.0f);
+    graphics.drawText("Use Carousel in Options to browse packs.",
+                      bounds.withTrimmedTop(22.0f),
+                      juce::Justification::centred);
 }
 
 void BrowserView::resized()
 {
     carousel->setBounds(getLocalBounds());
+}
+
+void BrowserView::browseViewModeChanged()
+{
+    updateActiveView();
+}
+
+void BrowserView::updateActiveView()
+{
+    const bool showCarousel = state.packViewMode == PackViewMode::coverFlow;
+    carousel->setVisible(showCarousel);
+    repaint();
 }
 }
 </file>
@@ -578,7 +579,8 @@ namespace samplebox
 {
 class CoverArtCarousel;
 
-class BrowserView final : public juce::Component
+class BrowserView final : public juce::Component,
+                          private BrowseState::Listener
 {
 public:
     using SampleSelected = std::function<void(const std::filesystem::path&)>;
@@ -586,13 +588,15 @@ public:
     BrowserView(BrowseState& browseState, SampleSelected onSampleSelected = {});
     ~BrowserView() override;
 
-    // Re-renders the active pack view using the current shared state.
     void refresh();
 
     void paint(juce::Graphics& graphics) override;
     void resized() override;
 
 private:
+    void browseViewModeChanged() override;
+    void updateActiveView();
+
     BrowseState& state;
     std::unique_ptr<CoverArtCarousel> carousel;
 };
@@ -698,7 +702,9 @@ void CoverArtCard::paint(juce::Graphics& graphics)
     graphics.setColour(theme::surface);
     graphics.fillRoundedRectangle(bounds, theme::cardCornerRadius);
 
-    const auto artworkBounds = bounds.reduced(12.0f).withTrimmedBottom(46.0f);
+    const auto artworkBounds = showTitle
+                                ? bounds.reduced(12.0f).withTrimmedBottom(46.0f)
+                                : bounds.reduced(12.0f);
     constexpr int coverFlowThumbnailSize = 320;
     const auto thumbnailWidth = coverFlowThumbnailSize;
     const auto thumbnailHeight = coverFlowThumbnailSize;
@@ -1709,9 +1715,9 @@ OptionsComponent::OptionsComponent()
     viewLabel.setText("Default view", juce::dontSendNotification);
     volumeLabel.setText("Preview volume", juce::dontSendNotification);
 
-    viewCombo.addItem("List", 1);
-    viewCombo.addItem("Grid", 2);
-    viewCombo.addItem("Cover Flow", 3);
+    viewCombo.addItem("List (under construction)", 1);
+    viewCombo.addItem("Grid (under construction)", 2);
+    viewCombo.addItem("Carousel", 3);
     viewCombo.onChange = [this]
     {
         options.defaultViewMode = static_cast<PackViewMode>(viewCombo.getSelectedId() - 1);
@@ -2054,6 +2060,377 @@ private:
     int displayDurationMs = 3500;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ToastNotification)
+};
+}
+</file>
+
+<file path="scripts/build.ps1">
+param([ValidateSet('windows-debug', 'windows-release')][string]$Preset = 'windows-debug')
+cmake --build --preset $Preset --parallel
+</file>
+
+<file path="scripts/configure.ps1">
+param([ValidateSet('windows-debug', 'windows-release')][string]$Preset = 'windows-debug')
+cmake --preset $Preset
+</file>
+
+<file path="scripts/install-debug-vst3.ps1">
+[CmdletBinding()]
+param(
+    [switch]$Build,
+    [switch]$KeepAbletonOpen
+)
+
+$ErrorActionPreference = 'Stop'
+
+$repoRoot = Split-Path -Parent $PSScriptRoot
+$source = Join-Path $repoRoot 'build\windows-debug\src\plugin\SampleBox_VST3_artefacts\Debug\VST3\Sample Box.vst3'
+$destinationRoot = 'C:\Program Files\Common Files\VST3'
+$destination = Join-Path $destinationRoot 'Sample Box.vst3'
+
+$principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+$isAdministrator = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+if (-not $isAdministrator) {
+    throw "Administrator PowerShell is required to install into '$destinationRoot'. Reopen PowerShell with 'Run as administrator', then run this script again."
+}
+
+if ($Build) {
+    Push-Location $repoRoot
+    try {
+        cmake --build --preset windows-debug --parallel
+        if ($LASTEXITCODE -ne 0) {
+            throw "Build failed with exit code $LASTEXITCODE."
+        }
+    }
+    finally {
+        Pop-Location
+    }
+}
+
+if (-not (Test-Path -LiteralPath $source -PathType Container)) {
+    throw "Debug VST3 bundle was not found: $source`nBuild it first, or run this script with -Build."
+}
+
+if (-not $KeepAbletonOpen) {
+    Get-Process | Where-Object { $_.ProcessName -like 'Ableton Live*' } | Stop-Process -Force -ErrorAction SilentlyContinue
+}
+
+New-Item -ItemType Directory -Force -Path $destinationRoot | Out-Null
+Remove-Item -LiteralPath $destination -Recurse -Force -ErrorAction SilentlyContinue
+Copy-Item -LiteralPath $source -Destination $destination -Recurse -Force
+
+if (-not (Test-Path -LiteralPath $destination -PathType Container)) {
+    throw "Install verification failed: $destination was not created."
+}
+
+Write-Host "Installed clean Debug VST3 bundle:" -ForegroundColor Green
+Write-Host $destination
+Write-Host "Restart Ableton Live, then hold Alt while clicking Rescan if Sample Box is not listed." -ForegroundColor Yellow
+</file>
+
+<file path="scripts/package-windows.ps1">
+param([ValidateSet('windows-release')][string]$Preset = 'windows-release')
+cmake --build --preset $Preset --parallel
+Write-Host 'Packaging will be added after the standalone application has real assets and runtime dependencies.'
+</file>
+
+<file path="scripts/test.ps1">
+param([ValidateSet('windows-debug', 'windows-release')][string]$Preset = 'windows-debug')
+ctest --preset $Preset --output-on-failure
+</file>
+
+<file path="src/audio/WaveformCache.cpp">
+#include "WaveformCache.h"
+
+namespace samplebox
+{
+WaveformCache::WaveformCache(juce::AudioFormatManager& formatManagerToUse)
+    : formatManager(formatManagerToUse)
+{
+}
+
+juce::AudioThumbnail& WaveformCache::thumbnailFor(const std::filesystem::path& file)
+{
+    if (const auto found = thumbnails.find(file); found != thumbnails.end())
+        return *found->second;
+
+    auto thumbnail = std::make_unique<juce::AudioThumbnail>(512, formatManager, thumbnailCache);
+    thumbnail->setSource(new juce::FileInputSource(juce::File(file.string())));
+
+    auto& thumbnailRef = *thumbnail;
+    thumbnails.emplace(file, std::move(thumbnail));
+    return thumbnailRef;
+}
+
+void WaveformCache::clear()
+{
+    thumbnails.clear();
+}
+}
+</file>
+
+<file path="src/audio/WaveformCache.h">
+#pragma once
+
+#include <juce_audio_formats/juce_audio_formats.h>
+#include <juce_audio_utils/juce_audio_utils.h>
+
+#include <filesystem>
+#include <map>
+#include <memory>
+
+namespace samplebox
+{
+// Caches a juce::AudioThumbnail per sample file so waveform badges can be
+// drawn cheaply once a file has been previewed or selected once. Shares a
+// single thumbnail cache across all files rather than one per-component.
+class WaveformCache final
+{
+public:
+    explicit WaveformCache(juce::AudioFormatManager& formatManagerToUse);
+
+    juce::AudioThumbnail& thumbnailFor(const std::filesystem::path& file);
+    void clear();
+
+private:
+    juce::AudioFormatManager& formatManager;
+    juce::AudioThumbnailCache thumbnailCache { 32 };
+    std::map<std::filesystem::path, std::unique_ptr<juce::AudioThumbnail>> thumbnails;
+};
+}
+</file>
+
+<file path="src/core/AppOptions.h">
+#pragma once
+#include "BrowseState.h"
+
+namespace samplebox
+{
+// Global user options. Persisted by the host (standalone + plug-in share one PropertiesFile).
+struct AppOptions
+{
+    PackViewMode defaultViewMode = PackViewMode::coverFlow;
+    bool showCoverTitles = true;      // matches the previous always-on behaviour
+    float previewVolume = 1.0f;       // linear gain, 0..1
+};
+}
+</file>
+
+<file path="src/core/CMakeLists.txt">
+add_library(SampleBox_Core INTERFACE)
+target_include_directories(SampleBox_Core INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
+</file>
+
+<file path="src/core/SamplePack.h">
+#pragma once
+
+#include <filesystem>
+#include <string>
+#include <vector>
+
+namespace samplebox
+{
+struct SamplePack
+{
+    std::string id;
+    std::string title;
+    std::filesystem::path rootPath;
+    std::filesystem::path coverArtPath;
+    std::vector<std::filesystem::path> sampleFiles;
+};
+}
+</file>
+
+<file path="src/export/AbletonHierarchyExporter.cpp">
+#include "AbletonHierarchyExporter.h"
+
+#include <system_error>
+
+namespace samplebox::exportmodule
+{
+namespace
+{
+AbletonHierarchyExporter::GroupNode buildNode(const std::filesystem::path& dir)
+{
+    AbletonHierarchyExporter::GroupNode node;
+    node.name = dir.filename().string();
+
+    std::error_code ec;
+    std::filesystem::directory_iterator it(dir, ec);
+    const std::filesystem::directory_iterator end;
+
+    for (; it != end && !ec; it.increment(ec))
+    {
+        std::error_code entryEc;
+        if (it->is_directory(entryEc) && !entryEc)
+        {
+            node.children.push_back(buildNode(it->path()));
+        }
+        else if (it->is_regular_file(entryEc) && !entryEc)
+        {
+            node.files.push_back(it->path());
+        }
+    }
+
+    return node;
+}
+}
+
+AbletonHierarchyExporter::GroupNode AbletonHierarchyExporter::buildHierarchy(const SamplePack& pack) const
+{
+    return buildNode(pack.rootPath);
+}
+}
+</file>
+
+<file path="src/export/AbletonHierarchyExporter.h">
+#pragma once
+
+#include "../core/SamplePack.h"
+
+#include <filesystem>
+#include <string>
+#include <vector>
+
+namespace samplebox::exportmodule
+{
+// Ableton-only export mode: instead of the default curated flat drag,
+// reconstructs the pack's on-disk subfolder hierarchy as nested group
+// tracks once dropped into Live. Kept as a separate, user-enabled setting
+// rather than the universal VST3 export path, since most other DAWs have
+// no equivalent concept and no host-agnostic way to build one.
+//
+// A real implementation needs the Live Object Model bridge that existed
+// in the archived Ableton Extension prototype
+// (archive/ableton-extension-prototype/src/backend/lom). This class
+// currently only builds the in-memory group tree; wiring it to actual
+// Live group/audio tracks is a follow-up.
+class AbletonHierarchyExporter
+{
+public:
+    struct GroupNode
+    {
+        std::string name;
+        std::vector<std::filesystem::path> files;
+        std::vector<GroupNode> children;
+    };
+
+    [[nodiscard]] GroupNode buildHierarchy(const SamplePack& pack) const;
+};
+}
+</file>
+
+<file path="src/export/CMakeLists.txt">
+add_library(SampleBox_Export
+  AbletonHierarchyExporter.cpp
+  CuratedSampleSelector.cpp
+  FileDragExporter.cpp
+)
+
+target_include_directories(SampleBox_Export PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(SampleBox_Export PUBLIC
+  SampleBox_Core
+  juce::juce_gui_basics
+)
+</file>
+
+<file path="src/export/FileDragExporter.cpp">
+#include "FileDragExporter.h"
+
+namespace samplebox::exportmodule
+{
+bool FileDragExporter::beginDrag(juce::Component& source, const std::filesystem::path& file)
+{
+    return beginDrag(source, std::vector<std::filesystem::path> { file });
+}
+
+bool FileDragExporter::beginDrag(juce::Component& source, const std::vector<std::filesystem::path>& files)
+{
+    if (files.empty())
+        return false;
+
+    juce::StringArray paths;
+    for (const auto& file : files)
+        paths.add(juce::String(file.string()));
+
+    return juce::DragAndDropContainer::performExternalDragDropOfFiles(paths, false, &source);
+}
+}
+</file>
+
+<file path="src/export/FileDragExporter.h">
+#pragma once
+
+#include <juce_gui_basics/juce_gui_basics.h>
+
+#include <filesystem>
+#include <vector>
+
+namespace samplebox::exportmodule
+{
+// Starts a native OS file drag (single file, or the curated multi-file
+// selection for a whole pack) from any component, so users can drop
+// samples straight into their DAW's arrangement or browser. This is the
+// default, cross-DAW export path — it replaces the LOM-based hierarchy
+// export from the original Ableton Extension prototype for everything
+// except the Ableton-only group-track mode (see AbletonHierarchyExporter).
+class FileDragExporter
+{
+public:
+    static bool beginDrag(juce::Component& source, const std::filesystem::path& file);
+    static bool beginDrag(juce::Component& source, const std::vector<std::filesystem::path>& files);
+};
+}
+</file>
+
+<file path="src/indexing/CoverArtResolver.h">
+#pragma once
+
+#include <filesystem>
+
+namespace samplebox
+{
+class CoverArtResolver
+{
+public:
+    [[nodiscard]] std::filesystem::path resolveForPack(const std::filesystem::path& packRoot) const;
+};
+}
+</file>
+
+<file path="src/plugin/PluginEditor.h">
+#pragma once
+
+#include "PluginProcessor.h"
+#include "../ui/LookAndFeel.h"
+#include "../ui/MainPanel.h"
+
+#include <juce_audio_processors/juce_audio_processors.h>
+
+namespace samplebox
+{
+// VST3 editor. Hosts the same MainPanel used by the standalone
+// MainWindow, and borrows its LibraryScanner from the processor rather
+// than owning its own — the scanner's lifetime must match the plugin
+// instance, not the editor (which a DAW may close and reopen freely).
+class PluginEditor final : public juce::AudioProcessorEditor
+{
+public:
+    explicit PluginEditor(PluginProcessor&);
+    ~PluginEditor() override;
+
+    void paint(juce::Graphics&) override;
+    void resized() override;
+
+private:
+    void startScan(const juce::File& root);
+
+    PluginProcessor& processor;
+    LookAndFeel lookAndFeel;
+    MainPanel mainPanel;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginEditor)
 };
 }
 </file>
@@ -5952,762 +6329,6 @@ void PluginEditor::startScan(const juce::File& root)
 </files>
 </file>
 
-<file path="scripts/build.ps1">
-param([ValidateSet('windows-debug', 'windows-release')][string]$Preset = 'windows-debug')
-cmake --build --preset $Preset --parallel
-</file>
-
-<file path="scripts/configure.ps1">
-param([ValidateSet('windows-debug', 'windows-release')][string]$Preset = 'windows-debug')
-cmake --preset $Preset
-</file>
-
-<file path="scripts/install-debug-vst3.ps1">
-[CmdletBinding()]
-param(
-    [switch]$Build,
-    [switch]$KeepAbletonOpen
-)
-
-$ErrorActionPreference = 'Stop'
-
-$repoRoot = Split-Path -Parent $PSScriptRoot
-$source = Join-Path $repoRoot 'build\windows-debug\src\plugin\SampleBox_VST3_artefacts\Debug\VST3\Sample Box.vst3'
-$destinationRoot = 'C:\Program Files\Common Files\VST3'
-$destination = Join-Path $destinationRoot 'Sample Box.vst3'
-
-$principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
-$isAdministrator = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-
-if (-not $isAdministrator) {
-    throw "Administrator PowerShell is required to install into '$destinationRoot'. Reopen PowerShell with 'Run as administrator', then run this script again."
-}
-
-if ($Build) {
-    Push-Location $repoRoot
-    try {
-        cmake --build --preset windows-debug --parallel
-        if ($LASTEXITCODE -ne 0) {
-            throw "Build failed with exit code $LASTEXITCODE."
-        }
-    }
-    finally {
-        Pop-Location
-    }
-}
-
-if (-not (Test-Path -LiteralPath $source -PathType Container)) {
-    throw "Debug VST3 bundle was not found: $source`nBuild it first, or run this script with -Build."
-}
-
-if (-not $KeepAbletonOpen) {
-    Get-Process | Where-Object { $_.ProcessName -like 'Ableton Live*' } | Stop-Process -Force -ErrorAction SilentlyContinue
-}
-
-New-Item -ItemType Directory -Force -Path $destinationRoot | Out-Null
-Remove-Item -LiteralPath $destination -Recurse -Force -ErrorAction SilentlyContinue
-Copy-Item -LiteralPath $source -Destination $destination -Recurse -Force
-
-if (-not (Test-Path -LiteralPath $destination -PathType Container)) {
-    throw "Install verification failed: $destination was not created."
-}
-
-Write-Host "Installed clean Debug VST3 bundle:" -ForegroundColor Green
-Write-Host $destination
-Write-Host "Restart Ableton Live, then hold Alt while clicking Rescan if Sample Box is not listed." -ForegroundColor Yellow
-</file>
-
-<file path="scripts/package-windows.ps1">
-param([ValidateSet('windows-release')][string]$Preset = 'windows-release')
-cmake --build --preset $Preset --parallel
-Write-Host 'Packaging will be added after the standalone application has real assets and runtime dependencies.'
-</file>
-
-<file path="scripts/test.ps1">
-param([ValidateSet('windows-debug', 'windows-release')][string]$Preset = 'windows-debug')
-ctest --preset $Preset --output-on-failure
-</file>
-
-<file path="src/audio/WaveformCache.cpp">
-#include "WaveformCache.h"
-
-namespace samplebox
-{
-WaveformCache::WaveformCache(juce::AudioFormatManager& formatManagerToUse)
-    : formatManager(formatManagerToUse)
-{
-}
-
-juce::AudioThumbnail& WaveformCache::thumbnailFor(const std::filesystem::path& file)
-{
-    if (const auto found = thumbnails.find(file); found != thumbnails.end())
-        return *found->second;
-
-    auto thumbnail = std::make_unique<juce::AudioThumbnail>(512, formatManager, thumbnailCache);
-    thumbnail->setSource(new juce::FileInputSource(juce::File(file.string())));
-
-    auto& thumbnailRef = *thumbnail;
-    thumbnails.emplace(file, std::move(thumbnail));
-    return thumbnailRef;
-}
-
-void WaveformCache::clear()
-{
-    thumbnails.clear();
-}
-}
-</file>
-
-<file path="src/audio/WaveformCache.h">
-#pragma once
-
-#include <juce_audio_formats/juce_audio_formats.h>
-#include <juce_audio_utils/juce_audio_utils.h>
-
-#include <filesystem>
-#include <map>
-#include <memory>
-
-namespace samplebox
-{
-// Caches a juce::AudioThumbnail per sample file so waveform badges can be
-// drawn cheaply once a file has been previewed or selected once. Shares a
-// single thumbnail cache across all files rather than one per-component.
-class WaveformCache final
-{
-public:
-    explicit WaveformCache(juce::AudioFormatManager& formatManagerToUse);
-
-    juce::AudioThumbnail& thumbnailFor(const std::filesystem::path& file);
-    void clear();
-
-private:
-    juce::AudioFormatManager& formatManager;
-    juce::AudioThumbnailCache thumbnailCache { 32 };
-    std::map<std::filesystem::path, std::unique_ptr<juce::AudioThumbnail>> thumbnails;
-};
-}
-</file>
-
-<file path="src/core/CMakeLists.txt">
-add_library(SampleBox_Core INTERFACE)
-target_include_directories(SampleBox_Core INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
-</file>
-
-<file path="src/core/SamplePack.h">
-#pragma once
-
-#include <filesystem>
-#include <string>
-#include <vector>
-
-namespace samplebox
-{
-struct SamplePack
-{
-    std::string id;
-    std::string title;
-    std::filesystem::path rootPath;
-    std::filesystem::path coverArtPath;
-    std::vector<std::filesystem::path> sampleFiles;
-};
-}
-</file>
-
-<file path="src/core/StatePersistence.h">
-#pragma once
-
-#include "BrowseState.h"
-
-#include <juce_core/juce_core.h>
-#include <juce_audio_processors/juce_audio_processors.h>
-
-#include <memory>
-#include <string>
-
-namespace samplebox
-{
-// Serializes and restores plugin instance state and user settings across DAW
-// saves/reloads using a standard JUCE XmlElement representation.
-class StatePersistence
-{
-public:
-    static constexpr int CURRENT_STATE_VERSION = 1;
-
-    struct InstanceState
-    {
-        int version = CURRENT_STATE_VERSION;
-        juce::String sampleLibraryPath;
-        PackViewMode packViewMode = PackViewMode::coverFlow;
-        std::string focusedPackId;
-        std::string selectedSamplePath;
-        double thumbnailZoomGrid = 0.5;
-        double thumbnailZoomList = 0.5;
-        double thumbnailZoomCoverFlow = 0.5;
-        int randomDragSampleCount = 5;
-        bool showCoverTitles = false;
-    };
-
-    static std::unique_ptr<juce::XmlElement> createXmlFromState(const InstanceState& state)
-    {
-        auto xml = std::make_unique<juce::XmlElement>("SAMPLEBOX_STATE");
-        xml->setAttribute("version", state.version);
-        xml->setAttribute("sampleLibraryPath", state.sampleLibraryPath);
-        xml->setAttribute("packViewMode", static_cast<int>(state.packViewMode));
-        xml->setAttribute("focusedPackId", juce::String(state.focusedPackId));
-        xml->setAttribute("selectedSamplePath", juce::String(state.selectedSamplePath));
-        xml->setAttribute("thumbnailZoomGrid", state.thumbnailZoomGrid);
-        xml->setAttribute("thumbnailZoomList", state.thumbnailZoomList);
-        xml->setAttribute("thumbnailZoomCoverFlow", state.thumbnailZoomCoverFlow);
-        xml->setAttribute("randomDragSampleCount", state.randomDragSampleCount);
-        xml->setAttribute("showCoverTitles", state.showCoverTitles);
-        return xml;
-    }
-
-    static InstanceState restoreStateFromXml(const juce::XmlElement& xml)
-    {
-        InstanceState state;
-        if (!xml.hasTagName("SAMPLEBOX_STATE"))
-            return state;
-
-        state.version = xml.getIntAttribute("version", CURRENT_STATE_VERSION);
-        state.sampleLibraryPath = xml.getStringAttribute("sampleLibraryPath", {});
-        
-        const auto viewModeInt = xml.getIntAttribute("packViewMode", static_cast<int>(PackViewMode::coverFlow));
-        if (viewModeInt >= static_cast<int>(PackViewMode::list) && viewModeInt <= static_cast<int>(PackViewMode::coverFlow))
-            state.packViewMode = static_cast<PackViewMode>(viewModeInt);
-
-        state.focusedPackId = xml.getStringAttribute("focusedPackId", {}).toStdString();
-        state.selectedSamplePath = xml.getStringAttribute("selectedSamplePath", {}).toStdString();
-        state.thumbnailZoomGrid = xml.getDoubleAttribute("thumbnailZoomGrid", 0.5);
-        state.thumbnailZoomList = xml.getDoubleAttribute("thumbnailZoomList", 0.5);
-        state.thumbnailZoomCoverFlow = xml.getDoubleAttribute("thumbnailZoomCoverFlow", 0.5);
-        state.randomDragSampleCount = xml.getIntAttribute("randomDragSampleCount", 5);
-        state.showCoverTitles = xml.getBoolAttribute("showCoverTitles", false);
-
-        return state;
-    }
-
-    static void writeToMemoryBlock(const InstanceState& state, juce::MemoryBlock& destData)
-    {
-        const auto xml = createXmlFromState(state);
-        if (xml != nullptr)
-            juce::AudioProcessor::copyXmlToBinary(*xml, destData);
-    }
-
-    static InstanceState readFromMemoryBlock(const void* data, int sizeInBytes)
-    {
-        const auto xml = juce::AudioProcessor::getXmlFromBinary(data, sizeInBytes);
-        if (xml != nullptr)
-            return restoreStateFromXml(*xml);
-
-        return {};
-    }
-};
-}
-</file>
-
-<file path="src/export/AbletonHierarchyExporter.cpp">
-#include "AbletonHierarchyExporter.h"
-
-#include <system_error>
-
-namespace samplebox::exportmodule
-{
-namespace
-{
-AbletonHierarchyExporter::GroupNode buildNode(const std::filesystem::path& dir)
-{
-    AbletonHierarchyExporter::GroupNode node;
-    node.name = dir.filename().string();
-
-    std::error_code ec;
-    std::filesystem::directory_iterator it(dir, ec);
-    const std::filesystem::directory_iterator end;
-
-    for (; it != end && !ec; it.increment(ec))
-    {
-        std::error_code entryEc;
-        if (it->is_directory(entryEc) && !entryEc)
-        {
-            node.children.push_back(buildNode(it->path()));
-        }
-        else if (it->is_regular_file(entryEc) && !entryEc)
-        {
-            node.files.push_back(it->path());
-        }
-    }
-
-    return node;
-}
-}
-
-AbletonHierarchyExporter::GroupNode AbletonHierarchyExporter::buildHierarchy(const SamplePack& pack) const
-{
-    return buildNode(pack.rootPath);
-}
-}
-</file>
-
-<file path="src/export/AbletonHierarchyExporter.h">
-#pragma once
-
-#include "../core/SamplePack.h"
-
-#include <filesystem>
-#include <string>
-#include <vector>
-
-namespace samplebox::exportmodule
-{
-// Ableton-only export mode: instead of the default curated flat drag,
-// reconstructs the pack's on-disk subfolder hierarchy as nested group
-// tracks once dropped into Live. Kept as a separate, user-enabled setting
-// rather than the universal VST3 export path, since most other DAWs have
-// no equivalent concept and no host-agnostic way to build one.
-//
-// A real implementation needs the Live Object Model bridge that existed
-// in the archived Ableton Extension prototype
-// (archive/ableton-extension-prototype/src/backend/lom). This class
-// currently only builds the in-memory group tree; wiring it to actual
-// Live group/audio tracks is a follow-up.
-class AbletonHierarchyExporter
-{
-public:
-    struct GroupNode
-    {
-        std::string name;
-        std::vector<std::filesystem::path> files;
-        std::vector<GroupNode> children;
-    };
-
-    [[nodiscard]] GroupNode buildHierarchy(const SamplePack& pack) const;
-};
-}
-</file>
-
-<file path="src/export/CMakeLists.txt">
-add_library(SampleBox_Export
-  AbletonHierarchyExporter.cpp
-  CuratedSampleSelector.cpp
-  FileDragExporter.cpp
-)
-
-target_include_directories(SampleBox_Export PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(SampleBox_Export PUBLIC
-  SampleBox_Core
-  juce::juce_gui_basics
-)
-</file>
-
-<file path="src/export/FileDragExporter.cpp">
-#include "FileDragExporter.h"
-
-namespace samplebox::exportmodule
-{
-bool FileDragExporter::beginDrag(juce::Component& source, const std::filesystem::path& file)
-{
-    return beginDrag(source, std::vector<std::filesystem::path> { file });
-}
-
-bool FileDragExporter::beginDrag(juce::Component& source, const std::vector<std::filesystem::path>& files)
-{
-    if (files.empty())
-        return false;
-
-    juce::StringArray paths;
-    for (const auto& file : files)
-        paths.add(juce::String(file.string()));
-
-    return juce::DragAndDropContainer::performExternalDragDropOfFiles(paths, false, &source);
-}
-}
-</file>
-
-<file path="src/export/FileDragExporter.h">
-#pragma once
-
-#include <juce_gui_basics/juce_gui_basics.h>
-
-#include <filesystem>
-#include <vector>
-
-namespace samplebox::exportmodule
-{
-// Starts a native OS file drag (single file, or the curated multi-file
-// selection for a whole pack) from any component, so users can drop
-// samples straight into their DAW's arrangement or browser. This is the
-// default, cross-DAW export path — it replaces the LOM-based hierarchy
-// export from the original Ableton Extension prototype for everything
-// except the Ableton-only group-track mode (see AbletonHierarchyExporter).
-class FileDragExporter
-{
-public:
-    static bool beginDrag(juce::Component& source, const std::filesystem::path& file);
-    static bool beginDrag(juce::Component& source, const std::vector<std::filesystem::path>& files);
-};
-}
-</file>
-
-<file path="src/indexing/CoverArtResolver.h">
-#pragma once
-
-#include <filesystem>
-
-namespace samplebox
-{
-class CoverArtResolver
-{
-public:
-    [[nodiscard]] std::filesystem::path resolveForPack(const std::filesystem::path& packRoot) const;
-};
-}
-</file>
-
-<file path="src/plugin/PluginEditor.h">
-#pragma once
-
-#include "PluginProcessor.h"
-#include "../ui/LookAndFeel.h"
-#include "../ui/MainPanel.h"
-
-#include <juce_audio_processors/juce_audio_processors.h>
-
-namespace samplebox
-{
-// VST3 editor. Hosts the same MainPanel used by the standalone
-// MainWindow, and borrows its LibraryScanner from the processor rather
-// than owning its own — the scanner's lifetime must match the plugin
-// instance, not the editor (which a DAW may close and reopen freely).
-class PluginEditor final : public juce::AudioProcessorEditor
-{
-public:
-    explicit PluginEditor(PluginProcessor&);
-    ~PluginEditor() override;
-
-    void paint(juce::Graphics&) override;
-    void resized() override;
-
-private:
-    void startScan(const juce::File& root);
-
-    PluginProcessor& processor;
-    LookAndFeel lookAndFeel;
-    MainPanel mainPanel;
-
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginEditor)
-};
-}
-</file>
-
-<file path="tests/fixtures/sample-library/.gitkeep">
-
-</file>
-
-<file path="tests/fixtures/tiny-wav/.gitkeep">
-
-</file>
-
-<file path="tests/integration/.gitkeep">
-
-</file>
-
-<file path="tests/integration/CMakeLists.txt">
-# Integration tests will be added in a later milestone.
-</file>
-
-<file path="tests/unit/BrowseStateTests.cpp">
-#include "../../src/core/BrowseState.h"
-
-#include <cstdio>
-#include <string>
-
-namespace
-{
-int failures = 0;
-int checks = 0;
-
-void reportCheck(bool passed, const char* expression, const char* file, int line)
-{
-    ++checks;
-    if (!passed)
-    {
-        ++failures;
-        std::printf("FAIL %s:%d\n  %s\n", file, line, expression);
-    }
-}
-
-template <typename A, typename B>
-void reportEqual(const A& actual, const B& expected, const char* expression,
-                 const char* file, int line)
-{
-    ++checks;
-    if (!(actual == static_cast<A>(expected)))
-    {
-        ++failures;
-        std::printf("FAIL %s:%d\n  %s\n", file, line, expression);
-    }
-}
-
-#define CHECK(expr) reportCheck((expr), #expr, __FILE__, __LINE__)
-#define CHECK_EQ(actual, expected) \
-    reportEqual((actual), (expected), #actual " == " #expected, __FILE__, __LINE__)
-
-struct TestListener : public samplebox::BrowseState::Listener
-{
-    int selectionChangedCount = 0;
-    int snapshotChangedCount = 0;
-    int viewModeChangedCount = 0;
-
-    void browseSelectionChanged() override { ++selectionChangedCount; }
-    void browseSnapshotChanged() override { ++snapshotChangedCount; }
-    void browseViewModeChanged() override { ++viewModeChangedCount; }
-};
-
-samplebox::LibrarySnapshotPtr createMockLibrary(std::size_t count)
-{
-    auto snapshot = std::make_shared<samplebox::LibrarySnapshot>();
-
-    snapshot->packs.reserve(count);
-
-    for (std::size_t i = 0; i < count; ++i)
-    {
-        samplebox::SamplePack pack;
-        pack.id = "pack-" + std::to_string(i);
-        pack.title = "Pack Title " + std::to_string(i);
-        pack.sampleFiles = {
-            "D:/MockLibrary/pack" + std::to_string(i) + "/Kick.wav",
-            "D:/MockLibrary/pack" + std::to_string(i) + "/Snare.wav"
-        };
-        snapshot->packs.push_back(std::move(pack));
-    }
-    return snapshot;
-}
-
-void testO1LookupsAndSelection()
-{
-    constexpr std::size_t kPackCount = 2000;
-    auto mockLib = createMockLibrary(kPackCount);
-
-    samplebox::BrowseState state;
-    TestListener listener;
-    state.addListener(&listener);
-
-    state.setSnapshot(mockLib);
-    CHECK_EQ(state.getPackCount(), kPackCount);
-    CHECK_EQ(listener.snapshotChangedCount, 1);
-    CHECK_EQ(listener.selectionChangedCount, 1);
-
-    // Focus by index
-    state.focusPackByIndex(450);
-    CHECK_EQ(state.focusedPackId, std::string("pack-450"));
-    CHECK(state.findFocusedPackIndex().has_value());
-    CHECK_EQ(*state.findFocusedPackIndex(), static_cast<std::size_t>(450));
-    CHECK(state.findFocusedPack() != nullptr);
-    CHECK_EQ(state.findFocusedPack()->title, std::string("Pack Title 450"));
-    CHECK_EQ(listener.selectionChangedCount, 2);
-
-    // Focus by ID
-    state.focusPackById("pack-1999");
-    CHECK(state.findFocusedPackIndex().has_value());
-    CHECK_EQ(*state.findFocusedPackIndex(), static_cast<std::size_t>(1999));
-    CHECK_EQ(listener.selectionChangedCount, 3);
-
-    // Select sample
-    state.selectSample("D:/MockLibrary/pack1999/Kick.wav");
-    CHECK_EQ(state.selectedSamplePath, std::filesystem::path("D:/MockLibrary/pack1999/Kick.wav"));
-    CHECK_EQ(listener.selectionChangedCount, 4);
-
-    // Clear selection
-    state.clearSelection();
-    CHECK_EQ(state.focusedPackId, std::string{});
-    CHECK_EQ(state.selectedSamplePath, std::filesystem::path{});
-    CHECK(!state.findFocusedPackIndex().has_value());
-    CHECK_EQ(listener.selectionChangedCount, 5);
-
-    // View mode change
-    state.setPackViewMode(samplebox::PackViewMode::grid);
-    CHECK(state.packViewMode == samplebox::PackViewMode::grid);
-    CHECK_EQ(listener.viewModeChangedCount, 1);
-
-    state.removeListener(&listener);
-}
-
-void testSnapshotReplacementClearsMissingFocus()
-{
-    auto lib1 = createMockLibrary(10);
-    samplebox::BrowseState state;
-    state.setSnapshot(lib1);
-    state.focusPackById("pack-8");
-    CHECK_EQ(state.focusedPackId, std::string("pack-8"));
-
-    // Replace with smaller library missing pack-8
-    auto lib2 = createMockLibrary(5);
-    state.setSnapshot(lib2);
-    CHECK_EQ(state.focusedPackId, std::string{});
-    CHECK(!state.findFocusedPackIndex().has_value());
-}
-}
-
-int main()
-{
-    testO1LookupsAndSelection();
-    testSnapshotReplacementClearsMissingFocus();
-
-    std::printf("BrowseStateTests: %d checks, %d failures\n", checks, failures);
-    return failures == 0 ? 0 : 1;
-}
-</file>
-
-<file path="tests/unit/StatePersistenceTests.cpp">
-#include "../../src/core/StatePersistence.h"
-
-#include <cstdio>
-#include <string>
-
-namespace
-{
-int failures = 0;
-int checks = 0;
-
-void reportCheck(bool passed, const char* expression, const char* file, int line)
-{
-    ++checks;
-    if (!passed)
-    {
-        ++failures;
-        std::printf("FAIL %s:%d\n  %s\n", file, line, expression);
-    }
-}
-
-template <typename A, typename B>
-void reportEqual(const A& actual, const B& expected, const char* expression,
-                 const char* file, int line)
-{
-    ++checks;
-    if (!(actual == static_cast<A>(expected)))
-    {
-        ++failures;
-        std::printf("FAIL %s:%d\n  %s\n", file, line, expression);
-    }
-}
-
-#define CHECK(expr) reportCheck((expr), #expr, __FILE__, __LINE__)
-#define CHECK_EQ(actual, expected) \
-    reportEqual((actual), (expected), #actual " == " #expected, __FILE__, __LINE__)
-
-void testRoundTripState()
-{
-    samplebox::StatePersistence::InstanceState original;
-    original.sampleLibraryPath = "D:\\Samples\\MyPacks";
-    original.packViewMode = samplebox::PackViewMode::grid;
-    original.focusedPackId = "pack-123-abc";
-    original.selectedSamplePath = "D:\\Samples\\MyPacks\\Kick.wav";
-    original.thumbnailZoomGrid = 0.75;
-    original.thumbnailZoomList = 0.25;
-    original.thumbnailZoomCoverFlow = 0.85;
-    original.randomDragSampleCount = 8;
-    original.showCoverTitles = true;
-
-    auto xml = samplebox::StatePersistence::createXmlFromState(original);
-    CHECK(xml != nullptr);
-
-    const auto restored = samplebox::StatePersistence::restoreStateFromXml(*xml);
-    CHECK_EQ(restored.sampleLibraryPath, original.sampleLibraryPath);
-    CHECK(restored.packViewMode == original.packViewMode);
-    CHECK_EQ(restored.focusedPackId, original.focusedPackId);
-    CHECK_EQ(restored.selectedSamplePath, original.selectedSamplePath);
-    CHECK_EQ(restored.thumbnailZoomGrid, original.thumbnailZoomGrid);
-    CHECK_EQ(restored.thumbnailZoomList, original.thumbnailZoomList);
-    CHECK_EQ(restored.thumbnailZoomCoverFlow, original.thumbnailZoomCoverFlow);
-    CHECK_EQ(restored.randomDragSampleCount, original.randomDragSampleCount);
-    CHECK_EQ(restored.showCoverTitles, original.showCoverTitles);
-}
-
-void testDefaultStateFallback()
-{
-    juce::XmlElement emptyXml("OTHER_TAG");
-    const auto fallback = samplebox::StatePersistence::restoreStateFromXml(emptyXml);
-    CHECK_EQ(fallback.sampleLibraryPath, juce::String{});
-    CHECK(fallback.packViewMode == samplebox::PackViewMode::coverFlow);
-    CHECK_EQ(fallback.randomDragSampleCount, 5);
-    CHECK_EQ(fallback.showCoverTitles, false);
-}
-}
-
-int main()
-{
-    testRoundTripState();
-    testDefaultStateFallback();
-
-    std::printf("StatePersistenceTests: %d checks, %d failures\n", checks, failures);
-    return failures == 0 ? 0 : 1;
-}
-</file>
-
-<file path="tests/CMakeLists.txt">
-add_subdirectory(unit)
-add_subdirectory(integration)
-</file>
-
-<file path="CMakePresets.json">
-{
-  "version": 6,
-  "configurePresets": [
-    {
-      "name": "windows-base",
-      "hidden": true,
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/${presetName}",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "SAMPLEBOX_BUILD_TESTS": "ON"
-      }
-    },
-    {
-      "name": "windows-debug",
-      "inherits": "windows-base"
-    },
-    {
-      "name": "windows-release",
-      "inherits": "windows-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "SAMPLEBOX_BUILD_TESTS": "ON"
-      }
-    }
-  ],
-  "buildPresets": [
-    { "name": "windows-debug", "configurePreset": "windows-debug" },
-    { "name": "windows-release", "configurePreset": "windows-release" }
-  ],
-  "testPresets": [
-    { "name": "windows-debug", "configurePreset": "windows-debug", "output": { "outputOnFailure": true } },
-    { "name": "windows-release", "configurePreset": "windows-release", "output": { "outputOnFailure": true } }
-  ]
-}
-</file>
-
-<file path="cmake/SampleBoxOptions.cmake">
-option(SAMPLEBOX_BUILD_TESTS "Build Sample Box tests" ON)
-
-# TEMPORARY. Shows the drag-out diagnostic panel (src/ui/DragDropSpike) in
-# both the standalone and the VST3 editor. On by default only while the
-# question "will a DAW accept a file drag started from a plug-in editor?" is
-# open; see the header comment in DragDropSpike.h. Turn off with
-# -DSAMPLEBOX_DRAG_SPIKE=OFF, and delete the option along with the component
-# once the answer is recorded.
-option(SAMPLEBOX_DRAG_SPIKE "Show the temporary drag-out diagnostic panel" ON)
-
-set(SAMPLEBOX_JUCE_DIR "${CMAKE_SOURCE_DIR}/external/JUCE" CACHE PATH "Path to the JUCE checkout")
-
-if(NOT EXISTS "${SAMPLEBOX_JUCE_DIR}/CMakeLists.txt")
-  message(FATAL_ERROR "JUCE was not found at ${SAMPLEBOX_JUCE_DIR}. Initialize external/JUCE before configuring.")
-endif()
-
-add_subdirectory("${SAMPLEBOX_JUCE_DIR}" JUCE)
-</file>
-
 <file path="scripts/build.bat">
 @echo off
 setlocal EnableDelayedExpansion
@@ -7297,178 +6918,6 @@ target_link_libraries(SampleBox_Audio PUBLIC
 )
 </file>
 
-<file path="src/audio/PreviewEngine.cpp">
-#include "PreviewEngine.h"
-
-#include <algorithm>
-
-namespace samplebox
-{
-namespace
-{
-// 5 milliseconds fade-out window for pop-free choking and stopping
-constexpr double kFadeTimeSeconds = 0.005;
-}
-
-PreviewEngine::PreviewEngine()
-{
-    formatManager.registerBasicFormats();
-}
-
-PreviewEngine::~PreviewEngine()
-{
-    transportSource.setSource(nullptr);
-}
-
-bool PreviewEngine::play(const std::filesystem::path& file)
-{
-    // Choke existing playback
-    transportSource.stop();
-    transportSource.setSource(nullptr);
-    readerSource.reset();
-
-    isFadingOut.store(false, std::memory_order_relaxed);
-    currentGain = 1.0f;
-
-    std::unique_ptr<juce::AudioFormatReader> reader(
-        formatManager.createReaderFor(juce::File(file.string())));
-    if (reader == nullptr)
-        return false;
-
-    auto newSource = std::make_unique<juce::AudioFormatReaderSource>(reader.release(), true);
-    transportSource.setSource(newSource.get(), 0, nullptr, newSource->getAudioFormatReader()->sampleRate);
-    readerSource = std::move(newSource);
-
-    transportSource.setPosition(0.0);
-    transportSource.start();
-    return true;
-}
-
-void PreviewEngine::stop()
-{
-    if (!isPlaying())
-        return;
-
-    // Trigger rapid 5ms fade-out on audio thread
-    isFadingOut.store(true, std::memory_order_release);
-}
-
-bool PreviewEngine::isPlaying() const
-{
-    return transportSource.isPlaying();
-}
-
-void PreviewEngine::prepareToPlay(int samplesPerBlockExpected, double sampleRate)
-{
-    currentSampleRate = sampleRate > 0.0 ? sampleRate : 44100.0;
-    const auto fadeSamples = static_cast<float>(currentSampleRate * kFadeTimeSeconds);
-    fadeOutStep = fadeSamples > 0.0f ? (1.0f / fadeSamples) : 1.0f;
-
-    transportSource.prepareToPlay(samplesPerBlockExpected, currentSampleRate);
-}
-
-void PreviewEngine::releaseResources()
-{
-    transportSource.releaseResources();
-}
-
-void PreviewEngine::getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferToFill)
-{
-    transportSource.getNextAudioBlock(bufferToFill);
-
-    if (bufferToFill.buffer == nullptr || bufferToFill.numSamples <= 0)
-        return;
-
-    bufferToFill.buffer->applyGain(bufferToFill.startSample, bufferToFill.numSamples,
-                                   volume.load(std::memory_order_relaxed));
-
-    if (isFadingOut.load(std::memory_order_acquire))
-    {
-        for (int sample = 0; sample < bufferToFill.numSamples; ++sample)
-        {
-            currentGain = std::max(0.0f, currentGain - fadeOutStep);
-
-            for (int ch = 0; ch < bufferToFill.buffer->getNumChannels(); ++ch)
-            {
-                auto* channelData = bufferToFill.buffer->getWritePointer(ch, bufferToFill.startSample);
-                channelData[sample] *= currentGain;
-            }
-
-            if (currentGain <= 0.0f)
-            {
-                // Completed fade-out: silence remaining samples in block and stop transport
-                for (int ch = 0; ch < bufferToFill.buffer->getNumChannels(); ++ch)
-                {
-                    bufferToFill.buffer->clear(ch, bufferToFill.startSample + sample, bufferToFill.numSamples - sample);
-                }
-
-                transportSource.stop();
-                isFadingOut.store(false, std::memory_order_release);
-                currentGain = 1.0f;
-                break;
-            }
-        }
-    }
-}
-}
-</file>
-
-<file path="src/audio/PreviewEngine.h">
-#pragma once
-
-#include <juce_audio_formats/juce_audio_formats.h>
-#include <juce_audio_utils/juce_audio_utils.h>
-
-#include <atomic>
-#include <filesystem>
-#include <memory>
-
-namespace samplebox
-{
-// Single-voice sample preview player with click-free 5ms fade-out/fade-in
-// smoothing on choke and stop. Prevents pops and abrupt discontinuities
-// during auditioning.
-class PreviewEngine final : public juce::AudioSource
-{
-public:
-    PreviewEngine();
-    ~PreviewEngine() override;
-
-    // Smoothly chokes any active preview and starts playing `file` from the start.
-    // Returns false if the file could not be opened.
-    bool play(const std::filesystem::path& file);
-
-    // Triggers a click-free 5ms fade-out stop without starting a new preview.
-    void stop();
-
-    // Linear preview gain (0..1). Thread-safe; applied on the audio thread.
-    void setVolume(float linearGain) noexcept { volume.store(linearGain, std::memory_order_relaxed); }
-
-    bool isPlaying() const;
-
-    // juce::AudioSource
-    void prepareToPlay(int samplesPerBlockExpected, double sampleRate) override;
-    void releaseResources() override;
-    void getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferToFill) override;
-
-private:
-    void applyGainRamping(const juce::AudioSourceChannelInfo& bufferToFill);
-
-    juce::AudioFormatManager formatManager;
-    juce::AudioTransportSource transportSource;
-    std::unique_ptr<juce::AudioFormatReaderSource> readerSource;
-
-    double currentSampleRate = 44100.0;
-    std::atomic<bool> isFadingOut { false };
-    std::atomic<float> volume { 1.0f };
-    float currentGain = 1.0f;
-    float fadeOutStep = 0.01f;
-
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PreviewEngine)
-};
-}
-</file>
-
 <file path="src/core/SelectionState.h">
 #pragma once
 
@@ -7479,6 +6928,99 @@ namespace samplebox
 // Deprecated: BrowseState in BrowseState.h is the unified single source of truth
 // for pack selection, sample selection, view mode, and snapshot data.
 using SelectionState = BrowseState;
+}
+</file>
+
+<file path="src/core/StatePersistence.h">
+#pragma once
+
+#include "BrowseState.h"
+
+#include <juce_core/juce_core.h>
+#include <juce_audio_processors/juce_audio_processors.h>
+
+#include <memory>
+#include <string>
+
+namespace samplebox
+{
+// Serializes and restores plugin instance state and user settings across DAW
+// saves/reloads using a standard JUCE XmlElement representation.
+class StatePersistence
+{
+public:
+    static constexpr int CURRENT_STATE_VERSION = 1;
+
+    struct InstanceState
+    {
+        int version = CURRENT_STATE_VERSION;
+        juce::String sampleLibraryPath;
+        PackViewMode packViewMode = PackViewMode::coverFlow;
+        std::string focusedPackId;
+        std::string selectedSamplePath;
+        double thumbnailZoomGrid = 0.5;
+        double thumbnailZoomList = 0.5;
+        double thumbnailZoomCoverFlow = 0.5;
+        int randomDragSampleCount = 5;
+        bool showCoverTitles = false;
+    };
+
+    static std::unique_ptr<juce::XmlElement> createXmlFromState(const InstanceState& state)
+    {
+        auto xml = std::make_unique<juce::XmlElement>("SAMPLEBOX_STATE");
+        xml->setAttribute("version", state.version);
+        xml->setAttribute("sampleLibraryPath", state.sampleLibraryPath);
+        xml->setAttribute("packViewMode", static_cast<int>(state.packViewMode));
+        xml->setAttribute("focusedPackId", juce::String(state.focusedPackId));
+        xml->setAttribute("selectedSamplePath", juce::String(state.selectedSamplePath));
+        xml->setAttribute("thumbnailZoomGrid", state.thumbnailZoomGrid);
+        xml->setAttribute("thumbnailZoomList", state.thumbnailZoomList);
+        xml->setAttribute("thumbnailZoomCoverFlow", state.thumbnailZoomCoverFlow);
+        xml->setAttribute("randomDragSampleCount", state.randomDragSampleCount);
+        xml->setAttribute("showCoverTitles", state.showCoverTitles);
+        return xml;
+    }
+
+    static InstanceState restoreStateFromXml(const juce::XmlElement& xml)
+    {
+        InstanceState state;
+        if (!xml.hasTagName("SAMPLEBOX_STATE"))
+            return state;
+
+        state.version = xml.getIntAttribute("version", CURRENT_STATE_VERSION);
+        state.sampleLibraryPath = xml.getStringAttribute("sampleLibraryPath", {});
+        
+        const auto viewModeInt = xml.getIntAttribute("packViewMode", static_cast<int>(PackViewMode::coverFlow));
+        if (viewModeInt >= static_cast<int>(PackViewMode::list) && viewModeInt <= static_cast<int>(PackViewMode::coverFlow))
+            state.packViewMode = static_cast<PackViewMode>(viewModeInt);
+
+        state.focusedPackId = xml.getStringAttribute("focusedPackId", {}).toStdString();
+        state.selectedSamplePath = xml.getStringAttribute("selectedSamplePath", {}).toStdString();
+        state.thumbnailZoomGrid = xml.getDoubleAttribute("thumbnailZoomGrid", 0.5);
+        state.thumbnailZoomList = xml.getDoubleAttribute("thumbnailZoomList", 0.5);
+        state.thumbnailZoomCoverFlow = xml.getDoubleAttribute("thumbnailZoomCoverFlow", 0.5);
+        state.randomDragSampleCount = xml.getIntAttribute("randomDragSampleCount", 5);
+        state.showCoverTitles = xml.getBoolAttribute("showCoverTitles", false);
+
+        return state;
+    }
+
+    static void writeToMemoryBlock(const InstanceState& state, juce::MemoryBlock& destData)
+    {
+        const auto xml = createXmlFromState(state);
+        if (xml != nullptr)
+            juce::AudioProcessor::copyXmlToBinary(*xml, destData);
+    }
+
+    static InstanceState readFromMemoryBlock(const void* data, int sizeInBytes)
+    {
+        const auto xml = juce::AudioProcessor::getXmlFromBinary(data, sizeInBytes);
+        if (xml != nullptr)
+            return restoreStateFromXml(*xml);
+
+        return {};
+    }
+};
 }
 </file>
 
@@ -7895,417 +7437,269 @@ add_subdirectory(app)
 add_subdirectory(plugin)
 </file>
 
-<file path="tests/unit/ScannerTests.cpp">
-// Unit tests for LibraryScanner's filtering, traversal and error recovery.
-//
-// These replace a SmokeTests.cpp whose entire body was `return 0`, which meant
-// ctest reported a passing test suite while asserting nothing at all.
-//
-// No test framework: the project has no test dependency and adding one to
-// assert on a handful of predicates is not worth the build cost. The harness
-// below is about twenty lines and reports every failure with a file and line.
+<file path="src/audio/PreviewEngine.cpp">
+#include "PreviewEngine.h"
 
-#include "../../src/indexing/LibraryScanner.h"
+#include <algorithm>
 
-#include <cstdio>
-#include <filesystem>
-#include <fstream>
-#include <string>
-#include <vector>
-
+namespace samplebox
+{
 namespace
 {
-int failures = 0;
-int checks = 0;
-
-void reportCheck(bool passed, const char* expression, const char* file, int line)
-{
-    ++checks;
-
-    if (!passed)
-    {
-        ++failures;
-        std::printf("FAIL %s:%d\n  %s\n", file, line, expression);
-    }
+// 5 milliseconds fade-out window for pop-free choking and stopping
+constexpr double kFadeTimeSeconds = 0.005;
 }
 
-template <typename A, typename B>
-void reportEqual(const A& actual, const B& expected, const char* expression,
-                 const char* file, int line)
+PreviewEngine::PreviewEngine()
 {
-    ++checks;
-
-    if (!(actual == static_cast<A>(expected)))
-    {
-        ++failures;
-        std::printf("FAIL %s:%d\n  %s\n  expected %s, got %s\n", file, line, expression,
-                    std::to_string(expected).c_str(), std::to_string(actual).c_str());
-    }
+    formatManager.registerBasicFormats();
 }
 
-#define CHECK(expr) reportCheck((expr), #expr, __FILE__, __LINE__)
-#define CHECK_EQ(actual, expected) \
-    reportEqual((actual), (expected), #actual " == " #expected, __FILE__, __LINE__)
+PreviewEngine::~PreviewEngine()
+{
+    transportSource.setSource(nullptr);
+}
 
-// A temp directory that cleans itself up, so a failing test cannot leave
-// fixture trees behind for the next run to trip over.
-class ScopedTempDirectory
+bool PreviewEngine::play(const std::filesystem::path& file)
+{
+    // Choke existing playback
+    transportSource.stop();
+    transportSource.setSource(nullptr);
+    readerSource.reset();
+
+    isFadingOut.store(false, std::memory_order_relaxed);
+    currentGain = 1.0f;
+
+    std::unique_ptr<juce::AudioFormatReader> reader(
+        formatManager.createReaderFor(juce::File(file.string())));
+    if (reader == nullptr)
+        return false;
+
+    auto newSource = std::make_unique<juce::AudioFormatReaderSource>(reader.release(), true);
+    transportSource.setSource(newSource.get(), 0, nullptr, newSource->getAudioFormatReader()->sampleRate);
+    readerSource = std::move(newSource);
+
+    transportSource.setPosition(0.0);
+    transportSource.start();
+    return true;
+}
+
+void PreviewEngine::stop()
+{
+    if (!isPlaying())
+        return;
+
+    // Trigger rapid 5ms fade-out on audio thread
+    isFadingOut.store(true, std::memory_order_release);
+}
+
+bool PreviewEngine::isPlaying() const
+{
+    return transportSource.isPlaying();
+}
+
+void PreviewEngine::prepareToPlay(int samplesPerBlockExpected, double sampleRate)
+{
+    currentSampleRate = sampleRate > 0.0 ? sampleRate : 44100.0;
+    const auto fadeSamples = static_cast<float>(currentSampleRate * kFadeTimeSeconds);
+    fadeOutStep = fadeSamples > 0.0f ? (1.0f / fadeSamples) : 1.0f;
+
+    transportSource.prepareToPlay(samplesPerBlockExpected, currentSampleRate);
+}
+
+void PreviewEngine::releaseResources()
+{
+    transportSource.releaseResources();
+}
+
+void PreviewEngine::getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferToFill)
+{
+    transportSource.getNextAudioBlock(bufferToFill);
+
+    if (bufferToFill.buffer == nullptr || bufferToFill.numSamples <= 0)
+        return;
+
+    bufferToFill.buffer->applyGain(bufferToFill.startSample, bufferToFill.numSamples,
+                                   volume.load(std::memory_order_relaxed));
+
+    if (isFadingOut.load(std::memory_order_acquire))
+    {
+        for (int sample = 0; sample < bufferToFill.numSamples; ++sample)
+        {
+            currentGain = std::max(0.0f, currentGain - fadeOutStep);
+
+            for (int ch = 0; ch < bufferToFill.buffer->getNumChannels(); ++ch)
+            {
+                auto* channelData = bufferToFill.buffer->getWritePointer(ch, bufferToFill.startSample);
+                channelData[sample] *= currentGain;
+            }
+
+            if (currentGain <= 0.0f)
+            {
+                // Completed fade-out: silence remaining samples in block and stop transport
+                for (int ch = 0; ch < bufferToFill.buffer->getNumChannels(); ++ch)
+                {
+                    bufferToFill.buffer->clear(ch, bufferToFill.startSample + sample, bufferToFill.numSamples - sample);
+                }
+
+                transportSource.stop();
+                isFadingOut.store(false, std::memory_order_release);
+                currentGain = 1.0f;
+                break;
+            }
+        }
+    }
+}
+}
+</file>
+
+<file path="src/audio/PreviewEngine.h">
+#pragma once
+
+#include <juce_audio_formats/juce_audio_formats.h>
+#include <juce_audio_utils/juce_audio_utils.h>
+
+#include <atomic>
+#include <filesystem>
+#include <memory>
+
+namespace samplebox
+{
+// Single-voice sample preview player with click-free 5ms fade-out/fade-in
+// smoothing on choke and stop. Prevents pops and abrupt discontinuities
+// during auditioning.
+class PreviewEngine final : public juce::AudioSource
 {
 public:
-    explicit ScopedTempDirectory(const std::string& name)
-    {
-        std::error_code ec;
-        root = std::filesystem::temp_directory_path(ec) / ("samplebox-test-" + name);
-        std::filesystem::remove_all(root, ec);
-        std::filesystem::create_directories(root, ec);
-    }
+    PreviewEngine();
+    ~PreviewEngine() override;
 
-    ~ScopedTempDirectory()
-    {
-        std::error_code ec;
-        std::filesystem::remove_all(root, ec);
-    }
+    // Smoothly chokes any active preview and starts playing `file` from the start.
+    // Returns false if the file could not be opened.
+    bool play(const std::filesystem::path& file);
 
-    ScopedTempDirectory(const ScopedTempDirectory&) = delete;
-    ScopedTempDirectory& operator=(const ScopedTempDirectory&) = delete;
+    // Triggers a click-free 5ms fade-out stop without starting a new preview.
+    void stop();
 
-    [[nodiscard]] const std::filesystem::path& path() const { return root; }
+    // Linear preview gain (0..1). Thread-safe; applied on the audio thread.
+    void setVolume(float linearGain) noexcept { volume.store(linearGain, std::memory_order_relaxed); }
 
-    void makeDirectory(const std::string& relative) const
-    {
-        std::error_code ec;
-        std::filesystem::create_directories(root / relative, ec);
-    }
+    bool isPlaying() const;
 
-    // Writes a file with some non-zero content, since zero-byte files are
-    // deliberately filtered and would otherwise make tests pass for the wrong
-    // reason.
-    void makeFile(const std::string& relative, const std::string& contents = "not-really-audio") const
-    {
-        const auto full = root / relative;
-        std::error_code ec;
-        std::filesystem::create_directories(full.parent_path(), ec);
-
-        std::ofstream out(full, std::ios::binary | std::ios::trunc);
-        out.write(contents.data(), (std::streamsize) contents.size());
-    }
+    // juce::AudioSource
+    void prepareToPlay(int samplesPerBlockExpected, double sampleRate) override;
+    void releaseResources() override;
+    void getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferToFill) override;
 
 private:
-    std::filesystem::path root;
+    void applyGainRamping(const juce::AudioSourceChannelInfo& bufferToFill);
+
+    juce::AudioFormatManager formatManager;
+    juce::AudioTransportSource transportSource;
+    std::unique_ptr<juce::AudioFormatReaderSource> readerSource;
+
+    double currentSampleRate = 44100.0;
+    std::atomic<bool> isFadingOut { false };
+    std::atomic<float> volume { 1.0f };
+    float currentGain = 1.0f;
+    float fadeOutStep = 0.01f;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PreviewEngine)
+};
+}
+</file>
+
+<file path="src/core/LibrarySnapshot.h">
+#pragma once
+
+#include "SamplePack.h"
+
+#include <chrono>
+#include <memory>
+#include <vector>
+
+namespace samplebox
+{
+// What the scan actually managed to do, as opposed to what it was asked to
+// do. Carried alongside the results because a scan that quietly skipped half
+// a library looks exactly like a library that is half that size, and the user
+// is the only one who can tell the difference.
+struct ScanTally
+{
+    std::size_t sampleFiles = 0;
+
+    // Directories that could not be read or enumerated (permissions, a
+    // disconnected network share, a path exceeding the OS limit). Their
+    // contents are missing from the snapshot.
+    std::size_t unreadableDirectories = 0;
+
+    // Files skipped because they carry a supported extension but are not
+    // usable samples - AppleDouble stubs, zero-byte files, dotfiles.
+    std::size_t ignoredFiles = 0;
+
+    // True when the scan stopped early because it was cancelled, which means
+    // the snapshot is incomplete by design rather than by failure.
+    bool cancelled = false;
 };
 
-const samplebox::SamplePack* findPack(const samplebox::LibrarySnapshot& snapshot,
-                                      const std::string& title)
+struct LibrarySnapshot
 {
-    for (const auto& pack : snapshot.packs)
-        if (pack.title == title)
-            return &pack;
+    std::vector<SamplePack> packs;
+    std::chrono::system_clock::time_point generatedAt;
+    ScanTally tally;
+};
 
-    return nullptr;
+// A snapshot is produced once by the scanner and thereafter never mutated,
+// so it is passed around as shared immutable state rather than copied or
+// moved between owners. Every UI object that points into a snapshot's packs
+// holds one of these, which is what keeps those pointers valid for as long
+// as they are in use, no matter what order the owners are torn down in.
+using LibrarySnapshotPtr = std::shared_ptr<const LibrarySnapshot>;
 }
-
-//==============================================================================
-void testExtensionPredicate()
-{
-    using samplebox::LibraryScanner;
-
-    CHECK(LibraryScanner::hasSupportedAudioExtension("kick.wav"));
-    CHECK(LibraryScanner::hasSupportedAudioExtension("kick.aif"));
-    CHECK(LibraryScanner::hasSupportedAudioExtension("kick.aiff"));
-    CHECK(LibraryScanner::hasSupportedAudioExtension("kick.mp3"));
-    CHECK(LibraryScanner::hasSupportedAudioExtension("kick.flac"));
-
-    // Case-insensitive: packs are full of .WAV from older tooling.
-    CHECK(LibraryScanner::hasSupportedAudioExtension("KICK.WAV"));
-    CHECK(LibraryScanner::hasSupportedAudioExtension("Kick.Wav"));
-
-    CHECK(!LibraryScanner::hasSupportedAudioExtension("cover.png"));
-    CHECK(!LibraryScanner::hasSupportedAudioExtension("readme.txt"));
-    CHECK(!LibraryScanner::hasSupportedAudioExtension("noextension"));
-
-    // ".wav" as a whole filename is a dotfile, not a sample. The extension
-    // predicate is only asked about the extension, so it is isIgnoredFilename's
-    // job to reject this - checked below.
-    CHECK(LibraryScanner::isIgnoredFilename(".wav"));
-}
-
-void testIgnoredFilenamePredicate()
-{
-    using samplebox::LibraryScanner;
-
-    // AppleDouble sidecars. The whole reason this predicate exists.
-    CHECK(LibraryScanner::isIgnoredFilename("._kick.wav"));
-    CHECK(LibraryScanner::isIgnoredFilename("._"));
-
-    CHECK(LibraryScanner::isIgnoredFilename(".DS_Store"));
-    CHECK(LibraryScanner::isIgnoredFilename(".hidden.wav"));
-
-    CHECK(!LibraryScanner::isIgnoredFilename("kick.wav"));
-
-    // An underscore prefix is a normal naming convention and must survive.
-    CHECK(!LibraryScanner::isIgnoredFilename("_kick.wav"));
-
-    // A dot elsewhere in the name is fine - version numbers are common.
-    CHECK(!LibraryScanner::isIgnoredFilename("kick.v2.wav"));
-}
-
-void testIgnoredDirectoryPredicate()
-{
-    using samplebox::LibraryScanner;
-
-    CHECK(LibraryScanner::isIgnoredDirectoryName("__MACOSX"));
-    CHECK(LibraryScanner::isIgnoredDirectoryName("__macosx"));
-    CHECK(LibraryScanner::isIgnoredDirectoryName("$RECYCLE.BIN"));
-    CHECK(LibraryScanner::isIgnoredDirectoryName(".git"));
-
-    CHECK(!LibraryScanner::isIgnoredDirectoryName("Kicks"));
-    CHECK(!LibraryScanner::isIgnoredDirectoryName("808s & Snares"));
-
-    // Not a substring match: a pack legitimately called this must survive.
-    CHECK(!LibraryScanner::isIgnoredDirectoryName("macosx-drums"));
-}
-
-void testCountsPacksAndSamples()
-{
-    ScopedTempDirectory temp { "packs" };
-
-    temp.makeFile("Pack A/kick.wav");
-    temp.makeFile("Pack A/snare.wav");
-    temp.makeFile("Pack B/Loops/loop1.wav");
-    temp.makeFile("Pack B/Loops/Deeper/loop2.aiff");
-    temp.makeFile("Pack C/vox.mp3");
-
-    samplebox::LibraryScanner scanner;
-    const auto snapshot = scanner.scanTreeNow(temp.path(), nullptr);
-
-    CHECK(snapshot != nullptr);
-
-    // One pack per immediate subdirectory - three, not five. Nested folders
-    // inside a pack are part of that pack, not packs of their own.
-    CHECK_EQ(snapshot->packs.size(), 3u);
-    CHECK_EQ(snapshot->tally.sampleFiles, 5u);
-
-    // Sorted by title, so the order is defined.
-    CHECK(snapshot->packs[0].title == "Pack A");
-    CHECK(snapshot->packs[1].title == "Pack B");
-    CHECK(snapshot->packs[2].title == "Pack C");
-
-    const auto* packB = findPack(*snapshot, "Pack B");
-    CHECK(packB != nullptr);
-
-    if (packB != nullptr)
-        CHECK_EQ(packB->sampleFiles.size(), 2u); // found at two different depths
-}
-
-void testIgnoresNonAudioAndJunk()
-{
-    ScopedTempDirectory temp { "junk" };
-
-    temp.makeFile("Pack/kick.wav");
-    temp.makeFile("Pack/readme.txt");
-    temp.makeFile("Pack/cover.png");
-
-    // AppleDouble twin sitting beside a real sample. Before junk filtering was
-    // explicit, this was excluded only as a side effect of opening every file.
-    temp.makeFile("Pack/._kick.wav");
-    temp.makeFile("Pack/.DS_Store");
-
-    // Zero-byte file with a perfectly valid name.
-    temp.makeFile("Pack/empty.wav", "");
-
-    samplebox::LibraryScanner scanner;
-    const auto snapshot = scanner.scanTreeNow(temp.path(), nullptr);
-
-    CHECK_EQ(snapshot->packs.size(), 1u);
-    CHECK_EQ(snapshot->tally.sampleFiles, 1u);
-
-    // ._kick.wav and empty.wav are counted as ignored; readme.txt and cover.png
-    // are not, because they never looked like samples in the first place.
-    CHECK_EQ(snapshot->tally.ignoredFiles, 2u);
-
-    const auto& pack = snapshot->packs.front();
-    CHECK_EQ(pack.sampleFiles.size(), 1u);
-
-    if (!pack.sampleFiles.empty())
-        CHECK(pack.sampleFiles.front().filename() == "kick.wav");
-}
-
-void testDoesNotDescendIntoMacosxDirectories()
-{
-    ScopedTempDirectory temp { "macosx" };
-
-    temp.makeFile("Pack/kick.wav");
-    temp.makeFile("Pack/__MACOSX/._kick.wav");
-    temp.makeFile("Pack/__MACOSX/nested/whatever.wav");
-
-    samplebox::LibraryScanner scanner;
-    const auto snapshot = scanner.scanTreeNow(temp.path(), nullptr);
-
-    CHECK_EQ(snapshot->packs.size(), 1u);
-
-    // whatever.wav has an innocent name, so only refusing to descend keeps it
-    // out. It is not counted as ignored because it was never looked at.
-    CHECK_EQ(snapshot->tally.sampleFiles, 1u);
-}
-
-void testHidesEmptyAndUntriggerablePacks()
-{
-    ScopedTempDirectory temp { "empty-packs" };
-
-    // These immediate subfolders must not create browser cards because none
-    // contains a triggerable sample.
-    temp.makeDirectory("Empty");
-    temp.makeFile("Artwork Only/cover.png");
-    temp.makeFile("Documentation/readme.txt");
-    temp.makeFile("Sidecars/._kick.wav");
-    temp.makeFile("Hidden/.DS_Store");
-    temp.makeFile("Zero Byte/empty.wav", "");
-
-    // A recursive playable file is enough to make this a visible pack.
-    temp.makeFile("Playable/Nested/kick.wav");
-
-    samplebox::LibraryScanner scanner;
-    const auto snapshot = scanner.scanTreeNow(temp.path(), nullptr);
-
-    CHECK_EQ(snapshot->packs.size(), 1u);
-    CHECK_EQ(snapshot->tally.sampleFiles, 1u);
-    CHECK_EQ(snapshot->tally.ignoredFiles, 2u);
-
-    const auto* playable = findPack(*snapshot, "Playable");
-    CHECK(playable != nullptr);
-    if (playable != nullptr)
-        CHECK_EQ(playable->sampleFiles.size(), 1u);
-
-    CHECK(findPack(*snapshot, "Empty") == nullptr);
-    CHECK(findPack(*snapshot, "Artwork Only") == nullptr);
-    CHECK(findPack(*snapshot, "Documentation") == nullptr);
-    CHECK(findPack(*snapshot, "Sidecars") == nullptr);
-    CHECK(findPack(*snapshot, "Hidden") == nullptr);
-    CHECK(findPack(*snapshot, "Zero Byte") == nullptr);
-}
-
-void testSkipsIgnoredTopLevelDirectoriesAsPacks()
-{
-    ScopedTempDirectory temp { "toplevel" };
-
-    temp.makeFile("Real Pack/kick.wav");
-    temp.makeFile("__MACOSX/._something.wav");
-    temp.makeFile(".hidden/kick.wav");
-
-    // Loose files in the selected root are deliberately ignored. The root is
-    // a container of pack folders, not a pack/card of its own.
-    temp.makeFile("stray.wav");
-
-    samplebox::LibraryScanner scanner;
-    const auto snapshot = scanner.scanTreeNow(temp.path(), nullptr);
-
-    CHECK_EQ(snapshot->packs.size(), 1u);
-
-    if (!snapshot->packs.empty())
-        CHECK(snapshot->packs.front().title == "Real Pack");
-}
-
-void testResolvesCoverArt()
-{
-    ScopedTempDirectory temp { "covers" };
-
-    // Preference order: cover beats folder.
-    temp.makeFile("Ranked/kick.wav");
-    temp.makeFile("Ranked/folder.jpg");
-    temp.makeFile("Ranked/cover.png");
-
-    // Case-insensitive match.
-    temp.makeFile("Cased/kick.wav");
-    temp.makeFile("Cased/Cover.JPG");
-
-    // Sole loose image is used even though it matches no known stem.
-    temp.makeFile("Loose/kick.wav");
-    temp.makeFile("Loose/Bass House Vol 3.png");
-
-    // Two loose images is ambiguous, so neither is chosen.
-    temp.makeFile("Ambiguous/kick.wav");
-    temp.makeFile("Ambiguous/one.png");
-    temp.makeFile("Ambiguous/two.png");
-
-    // No image at all.
-    temp.makeFile("Bare/kick.wav");
-
-    samplebox::LibraryScanner scanner;
-    const auto snapshot = scanner.scanTreeNow(temp.path(), nullptr);
-
-    CHECK_EQ(snapshot->packs.size(), 5u);
-
-    const auto* ranked = findPack(*snapshot, "Ranked");
-    CHECK(ranked != nullptr);
-    if (ranked != nullptr)
-        CHECK(ranked->coverArtPath.filename() == "cover.png");
-
-    const auto* cased = findPack(*snapshot, "Cased");
-    CHECK(cased != nullptr);
-    if (cased != nullptr)
-        CHECK(cased->coverArtPath.filename() == "Cover.JPG");
-
-    const auto* loose = findPack(*snapshot, "Loose");
-    CHECK(loose != nullptr);
-    if (loose != nullptr)
-        CHECK(loose->coverArtPath.filename() == "Bass House Vol 3.png");
-
-    const auto* ambiguous = findPack(*snapshot, "Ambiguous");
-    CHECK(ambiguous != nullptr);
-    if (ambiguous != nullptr)
-        CHECK(ambiguous->coverArtPath.empty());
-
-    const auto* bare = findPack(*snapshot, "Bare");
-    CHECK(bare != nullptr);
-    if (bare != nullptr)
-        CHECK(bare->coverArtPath.empty());
-}
-
-void testMissingRootYieldsEmptySnapshot()
-{
-    samplebox::LibraryScanner scanner;
-    const auto snapshot = scanner.scanTreeNow("/definitely/not/a/real/path/anywhere", nullptr);
-
-    CHECK(snapshot != nullptr);
-    CHECK(snapshot->packs.empty());
-    CHECK(!snapshot->tally.cancelled);
-}
-
-void testCancellationIsReported()
-{
-    ScopedTempDirectory temp { "cancel" };
-
-    for (int i = 0; i < 5; ++i)
-        temp.makeFile("Pack " + std::to_string(i) + "/kick.wav");
-
-    samplebox::LibraryScanner scanner;
-
-    // Cancel immediately, before the first entry is considered.
-    const auto snapshot = scanner.scanTreeNow(temp.path(), [] { return true; });
-
-    CHECK(snapshot != nullptr);
-    CHECK(snapshot->tally.cancelled);
-    CHECK(snapshot->packs.empty());
-}
-}
-
-int main()
-{
-    testExtensionPredicate();
-    testIgnoredFilenamePredicate();
-    testIgnoredDirectoryPredicate();
-    testCountsPacksAndSamples();
-    testIgnoresNonAudioAndJunk();
-    testDoesNotDescendIntoMacosxDirectories();
-    testHidesEmptyAndUntriggerablePacks();
-    testSkipsIgnoredTopLevelDirectoriesAsPacks();
-    testResolvesCoverArt();
-    testMissingRootYieldsEmptySnapshot();
-    testCancellationIsReported();
-
-    std::printf("%d checks, %d failure(s)\n", checks, failures);
-    return failures == 0 ? 0 : 1;
-}
+</file>
+
+<file path="src/plugin/CMakeLists.txt">
+# NOTE: PLUGIN_MANUFACTURER_CODE / PLUGIN_CODE below are placeholders.
+# Replace with Schism Studio's registered Steinberg codes before a real
+# release build if/when one is obtained.
+juce_add_plugin(SampleBox_VST3
+  COMPANY_NAME "Schism Studio"
+  PRODUCT_NAME "Sample Box"
+  BUNDLE_ID "com.schismstudio.samplebox"
+  PLUGIN_MANUFACTURER_CODE Schs
+  PLUGIN_CODE Sbox
+  FORMATS VST3
+  VST3_CATEGORIES Tools
+  IS_SYNTH FALSE
+  NEEDS_MIDI_INPUT FALSE
+  NEEDS_MIDI_OUTPUT FALSE
+  IS_MIDI_EFFECT FALSE
+  EDITOR_WANTS_KEYBOARD_FOCUS FALSE
+)
+
+target_sources(SampleBox_VST3 PRIVATE
+  PluginEditor.cpp
+  PluginProcessor.cpp
+)
+
+target_include_directories(SampleBox_VST3 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
+target_link_libraries(SampleBox_VST3 PRIVATE
+  SampleBox_Core
+  SampleBox_Indexing
+  SampleBox_Audio
+  SampleBox_UI
+  SampleBox_Export
+  juce::juce_audio_processors
+  juce::juce_audio_utils
+  juce::juce_data_structures
+)
+
+target_compile_definitions(SampleBox_VST3 PUBLIC
+  JUCE_WEB_BROWSER=0
+  JUCE_USE_CURL=0
+  JUCE_VST3_CAN_REPLACE_VST2=0
+)
 </file>
 
 <file path="src/core/BrowseState.h">
@@ -8533,122 +7927,6 @@ private:
     std::vector<Listener*> listeners;
 };
 }
-</file>
-
-<file path="src/core/LibrarySnapshot.h">
-#pragma once
-
-#include "SamplePack.h"
-
-#include <chrono>
-#include <memory>
-#include <vector>
-
-namespace samplebox
-{
-// What the scan actually managed to do, as opposed to what it was asked to
-// do. Carried alongside the results because a scan that quietly skipped half
-// a library looks exactly like a library that is half that size, and the user
-// is the only one who can tell the difference.
-struct ScanTally
-{
-    std::size_t sampleFiles = 0;
-
-    // Directories that could not be read or enumerated (permissions, a
-    // disconnected network share, a path exceeding the OS limit). Their
-    // contents are missing from the snapshot.
-    std::size_t unreadableDirectories = 0;
-
-    // Files skipped because they carry a supported extension but are not
-    // usable samples - AppleDouble stubs, zero-byte files, dotfiles.
-    std::size_t ignoredFiles = 0;
-
-    // True when the scan stopped early because it was cancelled, which means
-    // the snapshot is incomplete by design rather than by failure.
-    bool cancelled = false;
-};
-
-struct LibrarySnapshot
-{
-    std::vector<SamplePack> packs;
-    std::chrono::system_clock::time_point generatedAt;
-    ScanTally tally;
-};
-
-// A snapshot is produced once by the scanner and thereafter never mutated,
-// so it is passed around as shared immutable state rather than copied or
-// moved between owners. Every UI object that points into a snapshot's packs
-// holds one of these, which is what keeps those pointers valid for as long
-// as they are in use, no matter what order the owners are torn down in.
-using LibrarySnapshotPtr = std::shared_ptr<const LibrarySnapshot>;
-}
-</file>
-
-<file path="src/plugin/CMakeLists.txt">
-# NOTE: PLUGIN_MANUFACTURER_CODE / PLUGIN_CODE below are placeholders.
-# Replace with Schism Studio's registered Steinberg codes before a real
-# release build if/when one is obtained.
-juce_add_plugin(SampleBox_VST3
-  COMPANY_NAME "Schism Studio"
-  PRODUCT_NAME "Sample Box"
-  BUNDLE_ID "com.schismstudio.samplebox"
-  PLUGIN_MANUFACTURER_CODE Schs
-  PLUGIN_CODE Sbox
-  FORMATS VST3
-  VST3_CATEGORIES Tools
-  IS_SYNTH FALSE
-  NEEDS_MIDI_INPUT FALSE
-  NEEDS_MIDI_OUTPUT FALSE
-  IS_MIDI_EFFECT FALSE
-  EDITOR_WANTS_KEYBOARD_FOCUS FALSE
-)
-
-target_sources(SampleBox_VST3 PRIVATE
-  PluginEditor.cpp
-  PluginProcessor.cpp
-)
-
-target_include_directories(SampleBox_VST3 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-
-target_link_libraries(SampleBox_VST3 PRIVATE
-  SampleBox_Core
-  SampleBox_Indexing
-  SampleBox_Audio
-  SampleBox_UI
-  SampleBox_Export
-  juce::juce_audio_processors
-  juce::juce_audio_utils
-  juce::juce_data_structures
-)
-
-target_compile_definitions(SampleBox_VST3 PUBLIC
-  JUCE_WEB_BROWSER=0
-  JUCE_USE_CURL=0
-  JUCE_VST3_CAN_REPLACE_VST2=0
-)
-</file>
-
-<file path="CMakeLists.txt">
-cmake_minimum_required(VERSION 3.24)
-
-project(SampleBox VERSION 0.1.0 LANGUAGES C CXX)
-
-if (MSVC)
-  add_compile_options(/EHsc)
-endif()
-
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
-
-include(cmake/SampleBoxOptions.cmake)
-
-add_subdirectory(src)
-
-if(SAMPLEBOX_BUILD_TESTS)
-  enable_testing()
-  add_subdirectory(tests)
-endif()
 </file>
 
 <file path="src/indexing/CMakeLists.txt">
@@ -8988,29 +8266,6 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginProcessor)
 };
 }
-</file>
-
-<file path="tests/unit/CMakeLists.txt">
-add_executable(SampleBox_ScannerTests ScannerTests.cpp)
-target_link_libraries(SampleBox_ScannerTests PRIVATE
-  SampleBox_Core
-  SampleBox_Indexing
-)
-add_test(NAME SampleBox.Scanner COMMAND SampleBox_ScannerTests)
-
-add_executable(SampleBox_StateTests StatePersistenceTests.cpp)
-target_link_libraries(SampleBox_StateTests PRIVATE
-  SampleBox_Core
-  juce::juce_core
-  juce::juce_audio_processors
-)
-add_test(NAME SampleBox.State COMMAND SampleBox_StateTests)
-
-add_executable(SampleBox_BrowseStateTests BrowseStateTests.cpp)
-target_link_libraries(SampleBox_BrowseStateTests PRIVATE
-  SampleBox_Core
-)
-add_test(NAME SampleBox.BrowseState COMMAND SampleBox_BrowseStateTests)
 </file>
 
 <file path="src/indexing/LibraryScanner.cpp">

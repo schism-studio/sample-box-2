@@ -12,7 +12,8 @@ namespace samplebox
 {
 class CoverArtCarousel;
 
-class BrowserView final : public juce::Component
+class BrowserView final : public juce::Component,
+                          private BrowseState::Listener
 {
 public:
     using SampleSelected = std::function<void(const std::filesystem::path&)>;
@@ -20,13 +21,15 @@ public:
     BrowserView(BrowseState& browseState, SampleSelected onSampleSelected = {});
     ~BrowserView() override;
 
-    // Re-renders the active pack view using the current shared state.
     void refresh();
 
     void paint(juce::Graphics& graphics) override;
     void resized() override;
 
 private:
+    void browseViewModeChanged() override;
+    void updateActiveView();
+
     BrowseState& state;
     std::unique_ptr<CoverArtCarousel> carousel;
 };

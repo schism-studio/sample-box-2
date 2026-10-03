@@ -1,0 +1,44 @@
+# Options View Polish Patch Reference
+
+## Purpose
+
+This patch makes the existing Options tab honest while Carousel is the only functional browser view.
+
+- List and Grid show an explicit under-construction screen instead of silently leaving the carousel visible.
+- Cover Flow is relabelled Carousel in Options.
+- Disabling Show pack titles on covers removes the reserved title strip so artwork uses the full inner card area.
+
+## Files
+
+- E01 `src/UI/BrowserView.h`: listens to shared view-mode changes.
+- E02 `src/UI/BrowserView.cpp`: switches between the functional carousel and the under-construction message.
+- E03 `src/UI/CoverArtCard.cpp`: removes title padding when titles are disabled.
+- E04 `src/UI/OptionsComponent.cpp`: labels List/Grid as under construction and Cover Flow as Carousel.
+
+## Run
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\apply-options-view-polish.ps1 -DryRun
+.\apply-options-view-polish.ps1
+
+git diff --check
+git diff --stat
+scripts\build.bat clean release
+```
+
+## Manual validation
+
+1. In Options, select Carousel: existing carousel works unchanged.
+2. Select List: browser says List view is under construction.
+3. Select Grid: browser says Grid view is under construction.
+4. Return to Carousel: loaded packs return without a re-scan.
+5. Toggle Show pack titles on covers off: title area disappears and artwork occupies that area.
+6. Toggle it back on: title area returns.
+7. Check both standalone and VST3.
+
+## Revert
+
+```powershell
+.\apply-options-view-polish.ps1 -Revert
+```

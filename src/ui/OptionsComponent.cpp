@@ -8,9 +8,9 @@ OptionsComponent::OptionsComponent()
     viewLabel.setText("Default view", juce::dontSendNotification);
     volumeLabel.setText("Preview volume", juce::dontSendNotification);
 
-    viewCombo.addItem("List", 1);
-    viewCombo.addItem("Grid", 2);
-    viewCombo.addItem("Cover Flow", 3);
+    viewCombo.addItem("List (under construction)", 1);
+    viewCombo.addItem("Grid (under construction)", 2);
+    viewCombo.addItem("Carousel", 3);
     viewCombo.onChange = [this]
     {
         options.defaultViewMode = static_cast<PackViewMode>(viewCombo.getSelectedId() - 1);
